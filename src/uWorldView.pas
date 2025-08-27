@@ -489,15 +489,41 @@ begin
   FreeTileMap(S.drawMapB);
   FreeBooleanGrid(S.visibilityMap);
   FreeTileMap(S.worldIDs);
-  if S.univPixels <> nil then FreePixels(S.univPixels);
-  if S.landPixels <> nil then FreePixels(S.landPixels);
-  if S.townPixels <> nil then FreePixels(S.townPixels);
-  if S.mergedPixels <> nil then FreePixels(S.mergedPixels);
-  FillChar(S.univPixels, sizeof(S.univPixels), 0); // Nil pointers
-  FillChar(S.landPixels, sizeof(S.landPixels), 0);
-  FillChar(S.townPixels, sizeof(S.townPixels), 0);
-  FillChar(S.mergedPixels, sizeof(S.mergedPixels), 0);
+  
+  // Free and nil pixel data
+  if S.univPixels <> nil then 
+  begin
+    FreePixels(S.univPixels);
+    S.univPixels := nil;
+  end;
+  if S.landPixels <> nil then 
+  begin
+    FreePixels(S.landPixels);
+    S.landPixels := nil;
+  end;
+  if S.townPixels <> nil then 
+  begin
+    FreePixels(S.townPixels);
+    S.townPixels := nil;
+  end;
+  if S.mergedPixels <> nil then 
+  begin
+    FreePixels(S.mergedPixels);
+    S.mergedPixels := nil;
+  end;
 
+  // Initialize structures to known state
+  FillChar(S.tiles, SizeOf(S.tiles), 0);
+  FillChar(S.drawMapA, SizeOf(S.drawMapA), 0);
+  FillChar(S.drawMapB, SizeOf(S.drawMapB), 0);
+  FillChar(S.visibilityMap, SizeOf(S.visibilityMap), 0);
+  FillChar(S.worldIDs, SizeOf(S.worldIDs), 0);
+  
+  S.univCount := 0;
+  S.landCount := 0;
+  S.townCount := 0;
+  S.mergedCount := 0;
+  
   S.CurrentMapType := NewMapType;
 
   // Load tilesets and build draw maps based on the new map type
@@ -560,18 +586,22 @@ begin
     end;
   end;
 
-  // Init LOS map for new map
+  // Initialize visibility map for the new map
   S.visibilityMap.Width := MapW;
   S.visibilityMap.Height := MapH;
   SetLength(S.visibilityMap.Data, MapW * MapH);
+  if Length(S.visibilityMap.Data) > 0 then
+    FillChar(S.visibilityMap.Data[0], Length(S.visibilityMap.Data), 0);
 
   // Update player position
   S.Player.XLoc := NewPlayerX;
   S.Player.YLoc := NewPlayerY;
 
-  // Reset camera
+  // Reset camera and animation state
   S.cameraX := 0;
   S.cameraY := 0;
+  S.animAltNow := False;
+  S.nextSwap := SDL_GetTicks + S.animDelayMs;
 end;
 
 procedure TryExitLocation(var S: TWorldState; var R: TRenderer);
