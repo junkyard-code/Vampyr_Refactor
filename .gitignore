@@ -1,0 +1,83 @@
+# Compiled files
+*.exe
+*.o
+*.ppu
+*.dcu
+*.a
+*.so
+*.dll
+*.dylib
+*.res
+*.or
+*.compiled
+
+# Lazarus/FPC files
+*.lps
+*.lpi
+*.lpr
+*.lpk
+*.lpl
+*.pp
+*.bak
+*.ppu
+*.o
+*.a
+*.compiled
+*.or
+*.db
+*.dsk
+*.dci
+*.dcp
+*.dproj
+*.drc
+*.dres
+*.map
+*.identcache
+*.local
+*.log
+*.tvsconfig
+*.tps
+*.drc
+*.res
+*.rsj
+*.compiled
+
+# Executables
+vampyr
+vampyr.exe
+
+# Build directories
+bin/
+lib/
+backup/
+
+# IDE specific files
+.idea/
+.vscode/
+*.sln
+*.dproj
+*.dof
+*.dsk
+*.dof
+*.identcache
+*.tvsconfig
+
+# Debug files
+debug/
+*.dbg
+
+# Local settings
+*.local
+*.local.*
+
+# Project specific
+resources/original_source/*.exe
+resources/original_source/*.o
+resources/original_source/*.ppu
+
+# Keep the original source but ignore compiled artifacts
+!resources/original_source/*.pas
+!resources/original_source/*.con
+!resources/original_source/*.map
+!resources/original_source/*.dat
+!resources/original_source/*.doc

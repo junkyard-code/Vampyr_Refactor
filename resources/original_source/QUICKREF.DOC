@@ -1,0 +1,39 @@
+ QUICK REFERENCE 
+
+
+
+MAIN COMMANDS
+
+(A)ttack    ---   Attack a living creature.
+(C)limb     ---   Climb city walls or fences.
+(E)nter     ---   Enter a structure.
+(G)et       ---   Get chest.
+(K)limb     ---   Climb up or down staircases.
+(L)ook      ---   Look at a living creature or signs.
+(M)agic     ---   Cast miscellaneous magic spells.
+(O)ld Game  ---   Reload the old saved game.
+(P)ick      ---   Pick pockets.
+(Q)uit      ---   Quit the game.
+(R)est      ---   Make camp and rest.
+(S)ave      ---   Save the game.
+(T)alk      ---   Talk to a living creature.
+(U)nlock    ---   Pick locks.
+(Z)tats     ---   (1) Look at player's stats and equipments. 
+			   (2) Swap or drop equipments.
+Cursor Keys ---   Move the player around.
+RETURN      ---   Pass a turn.
+Ctrl-C      ---   Clear the text window.
+Ctrl-P      ---   Turn on/off perception check.
+Ctrl-S      ---   Turn on/off sound.
+
+
+
+COMBAT COMMANDS
+
+(C)ast      ---   Cast offensive/defensive magic spells.
+(F)ire      ---   Fire a missile weapon.
+(S)wap      ---   Swap weapons.
+Cursor Keys ---   Move/attack.
+RETURN      ---   Pass a turn.        
+Ctrl-C      ---   Clear the text window.
+ 
