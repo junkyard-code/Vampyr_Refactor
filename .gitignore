@@ -10,6 +10,12 @@
 *.res
 *.or
 *.compiled
+*.local
+*.log
+*.tvsconfig
+*.tps
+*.drc
+*.rsj
 
 # Lazarus/FPC files
 *.lps
@@ -75,9 +81,38 @@ resources/original_source/*.exe
 resources/original_source/*.o
 resources/original_source/*.ppu
 
+# Build artifacts
+build/
+bin/
+!bin/data/
+
 # Keep the original source but ignore compiled artifacts
 !resources/original_source/*.pas
 !resources/original_source/*.con
 !resources/original_source/*.map
 !resources/original_source/*.dat
 !resources/original_source/*.doc
+
+# Ignore local configuration files
+*.local
+*.ini
+
+# Ignore editor files
+.vscode/
+.idea/
+*.lps
+*.lpi
+*.lpr
+*.lpk
+*.lpl
+*.bak
+*.identcache
+
+# Ignore game data files in bin/
+bin/*.dat
+bin/*.map
+bin/*.con
+
+# But keep the directory structure
+!bin/**/
+!bin/data/**/
