@@ -73,15 +73,22 @@ begin
   World.TileViewerScrollY := 0;
 
 
-  writeln('Controls: arrows pan | F5 toggle animation | ESC quit');
+  writeln('Controls: arrows pan | F5 toggle animation | Q to quit');
   writeln('Click on map for tile info.');
 
   Running := True;
   while Running do
   begin
-    while SDL_PollEvent(@Event) = 1 do
+    // Process all pending events
+    while SDL_PollEvent(@Event) <> 0 do
     begin
+      if Event.type_ = SDL_QUITEV then
+        Running := False;
+        
       HandleEvent(World, GameRenderer, Event, Running);
+      
+      if not Running then Break; // Exit early if user pressed Q
+      
       if Event.type_ = SDL_MOUSEBUTTONDOWN then
       begin
         info := GetMapClickInfo(World, GameRenderer, Event.button.x, Event.button.y);
@@ -89,18 +96,24 @@ begin
       end;
     end;
 
-    UpdateWorld(World, Window);
+    if not Running then Break; // Exit before updating/render if we're quitting
 
-    SDL_SetRenderDrawColor(GameRenderer.FSDLRenderer, 0,0,0,255);
+    UpdateWorld(World, Window);
+    SDL_SetRenderDrawColor(GameRenderer.FSDLRenderer, 0, 0, 0, 255);
     SDL_RenderClear(GameRenderer.FSDLRenderer);
     RenderWorld(GameRenderer, World);
     SDL_RenderPresent(GameRenderer.FSDLRenderer);
   end;
 
-  // cleanup
-  FreeWorld(World, GameRenderer);
-  SDL_DestroyRenderer(GameRenderer.FSDLRenderer);
-  SDL_DestroyWindow(Window);
-  SDL_Quit;
+  // Cleanup in reverse order of initialization
+  try
+    FreeWorld(World, GameRenderer);
+    if GameRenderer.FSDLRenderer <> nil then
+      SDL_DestroyRenderer(GameRenderer.FSDLRenderer);
+    if Window <> nil then
+      SDL_DestroyWindow(Window);
+  finally
+    SDL_Quit;
+  end;
 end.
 

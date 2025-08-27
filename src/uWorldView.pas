@@ -742,7 +742,7 @@ begin
           writeln('  Loading TOWN.CON...');
           S.townPixels := nil;
           S.townCount := 0;
-          if not LoadCON(DataPath(S.DataDir, 'TOWN.CON'), S.townPixels, S.townCount, False, True) then
+          if not LoadCON(DataPath(S.DataDir, 'TOWN.CON'), S.townPixels, S.townCount, True, True) then
             raise Exception.Create('Failed to load TOWN.CON');
           if (S.townPixels = nil) or (S.townCount = 0) then
             raise Exception.Create('Failed to load TOWN.CON - no data loaded');
@@ -809,7 +809,7 @@ begin
     begin
       S.worldIDs := LoadMAPSlice(DataPath(S.DataDir, MapFile), MapW, MapH, 1, IsColMajor, MapIndex);
       LoadCON(DataPath(S.DataDir, 'UNIV.CON'), S.univPixels, S.univCount, False, True);
-      LoadCON(DataPath(S.DataDir, 'DUNGEON.CON'), S.townPixels, S.townCount, False, True);
+      LoadCON(DataPath(S.DataDir, 'DUNGEON.CON'), S.townPixels, S.townCount, True, True);
       MergeTilesets(S.univPixels, S.univCount, S.townPixels, S.townCount, S.mergedPixels, S.mergedCount);
       BuildTileTexture(R.FSDLRenderer, S.tiles, S.mergedPixels, S.mergedCount);
 
@@ -938,9 +938,8 @@ begin
   if E.type_ = SDL_KEYDOWN then
   begin
     case E.key.keysym.scancode of
-      SDL_SCANCODE_ESCAPE: 
-        if S.CurrentMapType = mtWorld then 
-          Running := False;
+      SDL_SCANCODE_Q:  // Use Q to quit from anywhere
+        Running := False;
       SDL_SCANCODE_F5: S.animEnabled := not S.animEnabled;
       SDL_SCANCODE_F12:
       begin
