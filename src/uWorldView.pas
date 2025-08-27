@@ -228,6 +228,8 @@ begin
   S.animDelayMs := 380;
   S.nextSwap := SDL_GetTicks + S.animDelayMs;
   S.CollisionEnabled := True;
+  S.debugTileView := False; // 7x7 view is default, F12 toggles to tile viewer
+  S.TileViewerScrollY := 0; // Reset scroll position
 
   // Init Player
   S.Player.XLoc := 55;
@@ -340,14 +342,19 @@ var
   viewW, viewH, tw, th, maxX, maxY, i: Integer;
   dist: Single;
 begin
-  // Center camera on player
-  SDL_GetWindowSize(Win, @viewW, @viewH);
+  // Position viewport in top-left corner
   tw := TILE_W * PIXEL_SCALE_X; 
   th := TILE_H * PIXEL_SCALE_Y;
-  S.cameraX := S.Player.XLoc * tw - (viewW div 2) + (tw div 2);
-  S.cameraY := S.Player.YLoc * th - (viewH div 2) + (th div 2);
-
-  // Clamp camera to map boundaries on the world map only
+  
+  // Calculate viewport dimensions (7x7 tiles)
+  viewW := 7 * tw;
+  viewH := 7 * th;
+  
+  // Set camera to player position, offset by 1 tile from top-left
+  S.cameraX := (S.Player.XLoc - 1) * tw;
+  S.cameraY := (S.Player.YLoc - 1) * th;
+  
+  // Clamp camera to map boundaries
   if S.CurrentMapType = mtWorld then
   begin
     maxX := S.worldIDs.Width * tw - viewW;
@@ -368,39 +375,47 @@ begin
   // Monster functionality removed
 end;
 
-procedure RenderWorld(var R: TRenderer; var S: TWorldState);
+procedure RenderGameView(var R: TRenderer; var S: TWorldState);
 var
-  viewW, viewH, tw, th, x, y, tileID, screenX, screenY, i: Integer;
-  tref: TTileRef;
+  viewW, viewH, tw, th, viewX, viewY, worldX, worldY, tileID, screenX, screenY, maxX, maxY, viewportX, viewportY: Integer;
 begin
-  if S.debugTileView then
-  begin
-    RenderTileViewer(R, S);
-    exit;
-  end;
-
-  SDL_GetRendererOutputSize(R.FSDLRenderer, @viewW, @viewH);
   tw := TILE_W * PIXEL_SCALE_X;
   th := TILE_H * PIXEL_SCALE_Y;
+  
+  // Calculate viewport dimensions (7x7 tiles)
+  viewW := 7 * tw;
+  viewH := 7 * th;
+  
+  // Calculate the top-left corner of the viewport
+  viewportX := 6;  // 6-pixel offset from left
+  viewportY := 6;  // 6-pixel offset from top
 
-  for y := S.cameraY div th to (S.cameraY + viewH) div th do
+
+  // Draw the 7x7 grid around the player
+  for viewY := 0 to 6 do
   begin
-    for x := S.cameraX div tw to (S.cameraX + viewW) div tw do
+    for viewX := 0 to 6 do
     begin
-      if (x >= 0) and (x < S.worldIDs.Width) and (y >= 0) and (y < S.worldIDs.Height) then
+      // Calculate world coordinates relative to player
+      worldX := S.Player.XLoc - 3 + viewX;
+      worldY := S.Player.YLoc - 3 + viewY;
+      
+      // Check if world coordinates are within map bounds
+      if (worldX >= 0) and (worldX < S.worldIDs.Width) and 
+         (worldY >= 0) and (worldY < S.worldIDs.Height) then
       begin
         // Use visibilityMap to decide whether to draw the tile
-        if (not S.VisibilityEnabled) or S.visibilityMap.Data[y * S.visibilityMap.Width + x] then
+        if (not S.VisibilityEnabled) or S.visibilityMap.Data[worldY * S.visibilityMap.Width + worldX] then
         begin
           if S.animEnabled and S.animAltNow then
-            tileID := S.drawMapB.Data[y * S.worldIDs.Width + x]
+            tileID := S.drawMapB.Data[worldY * S.worldIDs.Width + worldX]
           else
-            tileID := S.drawMapA.Data[y * S.worldIDs.Width + x];
+            tileID := S.drawMapA.Data[worldY * S.worldIDs.Width + worldX];
 
           if tileID > 0 then
           begin
-            screenX := x * tw - S.cameraX;
-            screenY := y * th - S.cameraY;
+            screenX := viewportX + viewX * tw;
+            screenY := viewportY + viewY * th;
             DrawTile(R.FSDLRenderer, S.tiles, tileID, screenX, screenY);
           end;
         end;
@@ -408,15 +423,15 @@ begin
     end;
   end;
 
-  // Draw player
-  screenX := S.Player.XLoc * tw - S.cameraX;
-  screenY := S.Player.YLoc * th - S.cameraY;
+  // Draw player (centered in the 7x7 grid)
+  screenX := viewportX + 3 * tw;
+  screenY := viewportY + 3 * th;
   DrawPlayerTile(R, screenX, screenY);
 end;
 
 procedure RenderTileViewer(var R: TRenderer; var S: TWorldState);
 var
-  i, x, y, tw, th, idRange, physicalIdx, cols, viewW, viewH: Integer;
+  i, x, y, tw, th, idRange, physicalIdx, cols, viewW, viewH, hSpacing, vSpacing, offsetX, offsetY: Integer;
   tref: TTileRef;
   mapFunc: function(ID: Integer): TTileRef;
   offset: Integer;
@@ -460,19 +475,24 @@ begin
     else
       physicalIdx := offset + tref.Frame1;
 
-    // Calculate screen position
-    SDL_GetRendererOutputSize(R.FSDLRenderer, @viewW, @viewH);
-    cols := viewW div (tw + 24);
-    if cols = 0 then cols := 1;
+      // Fixed 7x7 grid layout with 6-pixel offset from top-left
+    hSpacing := tw div 3;  // 1/3 of tile width for horizontal spacing
+    vSpacing := th div 2;  // 1/2 of tile height for vertical spacing
+    cols := 7;  // Fixed 7 columns for the grid
 
-    x := (i mod cols) * (tw + 24);
-    y := (i div cols) * (th + 24) - S.TileViewerScrollY;
+    // Calculate fixed grid positions starting at (6,6)
+    x := 6 + (i mod cols) * (tw + hSpacing);
+    y := 6 + (i div cols) * (th + vSpacing) - S.TileViewerScrollY;
 
-    // Draw the tile
-    DrawTile(R.FSDLRenderer, S.tiles, physicalIdx, x + 4, y + 4);
+    // Calculate offset as 1/9 of the scaled tile size (was 4px fixed)
+    offsetX := tw div 9;
+    offsetY := th div 9;
+    
+    // Draw the tile with proportional offset
+    DrawTile(R.FSDLRenderer, S.tiles, physicalIdx, x + offsetX, y + offsetY);
 
-    // Draw Logical TileID below the tile
-    DrawNumber(R.FSDLRenderer, i, x + 4, y + th + 8);
+    // Draw Logical TileID below the tile with proportional spacing
+    DrawNumber(R.FSDLRenderer, i, x + offsetX, y + th + (offsetY div 2));
   end;
 end;
 
@@ -951,6 +971,14 @@ begin
         end;
     end;
   end;
+end;
+
+procedure RenderWorld(var R: TRenderer; var S: TWorldState);
+begin
+  if S.debugTileView then
+    RenderTileViewer(R, S)
+  else
+    RenderGameView(R, S);
 end;
 
 function GetMapClickInfo(var S: TWorldState; R: TRenderer; mx, my: Integer): AnsiString;

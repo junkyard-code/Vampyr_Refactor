@@ -51,7 +51,7 @@ begin
   end;
 
   Window := SDL_CreateWindow('Vampyr World Viewer - Refactored',
-    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 252, 126, SDL_WINDOW_SHOWN); // 7x7 tiles (36x18 px)
+    SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 400, SDL_WINDOW_SHOWN); // 1280x400 for 2x scaling of 640x200
   if Window = nil then
   begin
     writeln('SDL_CreateWindow error: ', SDL_GetError);
@@ -65,7 +65,7 @@ begin
     halt(1);
   end;
 
-  SetScale(2, 1, 1); // Set initial scaling for the renderer
+  SetScale(2, 1, 2); // Set 4x horizontal (2*2) and 2x vertical (1*2) scaling
 
   InitWorld(World, GameRenderer, ExeDir);
 

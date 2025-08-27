@@ -37,8 +37,8 @@ procedure DrawNumber(renderer: PSDL_Renderer; n, x, y: Integer);
 procedure DrawTransparentRect(renderer: PSDL_Renderer; const rect: TSDL_Rect; r, g, b, a: Byte);
 
 var
-  PIXEL_SCALE_X: Integer = 2;
-  PIXEL_SCALE_Y: Integer = 1;
+  PIXEL_SCALE_X: Integer = 4;  // 4x horizontal scaling (2x original 2x scaling)
+  PIXEL_SCALE_Y: Integer = 2;  // 2x vertical scaling (2x original 1x scaling)
 
 implementation
 
