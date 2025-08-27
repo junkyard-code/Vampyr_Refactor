@@ -89,6 +89,7 @@ var
   i, t, x, y: Integer;
   ofs: Integer;
   totalPix: Integer;
+  size: NativeUInt;
 begin
   pixels := nil; count := 0;
   data := LoadFileBytes(fileName);
@@ -97,7 +98,12 @@ begin
   if count <= 0 then Exit(False);
 
   totalPix := count * TILE_PIX;
-  GetMem(pixels, totalPix * SizeOf(UInt32));
+  size := totalPix * SizeOf(UInt32);
+  writeln('  Allocating ', size, ' bytes for pixel data from ', fileName);
+  GetMem(pixels, size);
+  if pixels = nil then
+    raise Exception.Create('Failed to allocate memory for pixel data');
+  FillChar(pixels^, size, 0);  // Initialize to zero
   ofs := 0;
   for t := 0 to count-1 do
     for y := 0 to TILE_H-1 do
@@ -227,7 +233,21 @@ end;
 
 procedure FreePixels(p: PUInt32);
 begin
-  if p <> nil then FreeMem(p);
+  if p <> nil then
+  begin
+    writeln('  Freeing pixel data at $', IntToHex(NativeUInt(p), SizeOf(Pointer)*2));
+    try
+      FreeMem(p);
+    except
+      on E: Exception do
+      begin
+        writeln('  ERROR in FreePixels: ', E.ClassName, ': ', E.Message);
+        raise;
+      end;
+    end;
+  end
+  else
+    writeln('  FreePixels called with nil pointer');
 end;
 
 function LoadCONFileTile(const FileName: string; TileIndex: integer; out IconData: TIconData): boolean;

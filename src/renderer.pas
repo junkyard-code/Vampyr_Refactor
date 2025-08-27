@@ -57,23 +57,113 @@ begin
 end;
 
 procedure FreeTileSet(var t: TTileSet);
+var
+  TexPtr: PSDL_Texture;
 begin
-  if t.Atlas <> nil then
+  // Save the texture pointer to a local variable first
+  TexPtr := t.Atlas;
+  writeln('  FreeTileSet called, Atlas: $', IntToHex(NativeUInt(TexPtr), SizeOf(Pointer)*2));
+  
+  // Clear the texture reference before destroying it
+  t.Atlas := nil;
+  
+  if TexPtr <> nil then
   begin
-    SDL_DestroyTexture(t.Atlas);
-    t.Atlas := nil;
+    try
+      writeln('  - Destroying texture...');
+      SDL_DestroyTexture(TexPtr);
+      writeln('  - Texture destroyed successfully');
+    except
+      on E: Exception do
+      begin
+        writeln('  ERROR in FreeTileSet: ', E.ClassName, ': ', E.Message);
+        writeln('    Attempting to continue...');
+        // Don't re-raise to prevent crashes from texture cleanup
+      end;
+    end;
+  end
+  else
+  begin
+    writeln('  - No texture to destroy');
   end;
+  
+  // Reset all tile set properties
   t.Count := 0;
   t.AtlasCols := 0;
   t.AtlasRows := 0;
+  
+  // Clear any pixel data if present
+  if t.Pixels <> nil then
+  begin
+    try
+      FreePixels(t.Pixels);
+      t.Pixels := nil;
+    except
+      on E: Exception do
+        writeln('  WARNING: Error freeing tile set pixels: ', E.Message);
+    end;
+  end;
+  
+  writeln('  TileSet reset complete');
 end;
 
 procedure FreeTileMap(var m: TTileMap);
+var
+  DataPtr: Pointer;
+  DataLen: Integer;
 begin
-  SetLength(m.Data, 0);
+  // Save the current state for logging
+  DataPtr := Pointer(m.Data);
+  DataLen := Length(m.Data);
+  
+  writeln('  FreeTileMap called, Data: $', IntToHex(NativeUInt(DataPtr), SizeOf(Pointer)*2), 
+          ', Size: ', DataLen, ' bytes');
+  
+  // First, clear the reference to the data to prevent any dangling pointers
   m.Width := 0;
   m.Height := 0;
   m.IndexSize := 0;
+  
+  // Then safely free the data
+  if DataLen > 0 then
+  begin
+    try
+      // Use a local variable to avoid any potential issues with the record
+      SetLength(m.Data, 0);
+      // Ensure the array is really cleared
+      if Length(m.Data) > 0 then
+      begin
+        writeln('  WARNING: Array not properly cleared! Forcing finalization...');
+        Finalize(m.Data);
+        SetLength(m.Data, 0);
+      end;
+      writeln('  TileMap reset complete');
+    except
+      on E: Exception do
+      begin
+        writeln('  ERROR in FreeTileMap: ', E.ClassName, ': ', E.Message);
+        writeln('    Attempting to recover...');
+        try
+          // Last resort: try to finalize the array directly
+          if DataPtr <> nil then
+            FinalizeArray(DataPtr, TypeInfo(TByteArray), 1);
+          SetLength(m.Data, 0);
+          writeln('    Recovery successful');
+        except
+          on E2: Exception do
+          begin
+            writeln('    Recovery failed: ', E2.ClassName, ': ', E2.Message);
+            // Continue with the original exception
+            raise E;
+          end;
+        end;
+      end;
+    end;
+  end
+  else
+  begin
+    writeln('  TileMap already empty');
+  end;
 end;
 
 procedure BuildTileTexture(renderer: PSDL_Renderer; var tiles: TTileSet;

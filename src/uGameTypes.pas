@@ -9,11 +9,14 @@ uses
   SDL2;
 
 type
+  TTileMapData = array of Byte;  // Define the tile map data type
+
   TTileSet = record
     Count: Integer;
     Atlas: PSDL_Texture;
     AtlasCols: Integer;
     AtlasRows: Integer;
+    Pixels: PUInt32;  // Add Pixels field for texture data
   end;
 
   TMapType = (mtWorld, mtTown, mtCastle, mtDungeon, mtRuin, mtVampyrCastle);
@@ -31,7 +34,7 @@ type
 
   TTileMap = record
     Width, Height, IndexSize: Integer;
-    Data: TByteArray;
+    Data: TTileMapData;  // Use the defined type
   end;
 
   TSkills = array[1..9] of Byte;
@@ -144,12 +147,17 @@ end;
 
 procedure FreeTileMap(var M: TTileMap);
 begin
-  M.Data := nil;
+  SetLength(M.Data, 0);
+  M.Width := 0;
+  M.Height := 0;
+  M.IndexSize := 0;
 end;
 
 procedure FreeBooleanGrid(var G: TBooleanGrid);
 begin
-  G.Data := nil;
+  SetLength(G.Data, 0);
+  G.Width := 0;
+  G.Height := 0;
 end;
 
 end.

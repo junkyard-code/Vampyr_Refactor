@@ -477,20 +477,86 @@ begin
 end;
 
 
+procedure LogMemory(const Msg: string; Ptr: Pointer);
+begin
+  if Ptr = nil then
+    writeln('  MEMORY: ', Msg, ': nil')
+  else
+    writeln('  MEMORY: ', Msg, ': $', IntToHex(NativeUInt(Ptr), SizeOf(Pointer)*2));
+end;
+
 procedure LoadNewMap(var S: TWorldState; var R: TRenderer; const MapFile: string; NewMapType: TMapType; MapW, MapH: Integer; IsColMajor: Boolean; NewPlayerX, NewPlayerY, MapIndex: Integer);
 var
   FullPath: string;
+  i: Integer;
+  OldMapType: TMapType;
+  dataPtr: Pointer;
+  dataSize: Integer;
 begin
-  writeln('LoadNewMap called with MapFile: ', MapFile, ', Type: ', Ord(NewMapType));
+  OldMapType := S.CurrentMapType;
+  writeln('LoadNewMap called with MapFile: ', MapFile, ', Type: ', Ord(NewMapType), 
+          ' (Previous map type: ', Ord(OldMapType), ')');
   
   // Free all previous map resources
+  writeln('  Freeing previous map resources...');
+  writeln('  TileSet.Atlas before free: ', PtrUInt(S.tiles.Atlas));
+  
+  writeln('  - Freeing tiles.Atlas...');
+  if S.tiles.Atlas <> nil then
+  begin
+    SDL_DestroyTexture(S.tiles.Atlas);
+    S.tiles.Atlas := nil;
+  end;
+  
+  writeln('  - Freeing tileset...');
   FreeTileSet(S.tiles);
+  
+  writeln('  - Freeing draw maps...');
   FreeTileMap(S.drawMapA);
   FreeTileMap(S.drawMapB);
+  
+  writeln('  - Freeing visibility map...');
   FreeBooleanGrid(S.visibilityMap);
-  FreeTileMap(S.worldIDs);
+  
+  writeln('  - Freeing world IDs...');
+  try
+    writeln('    worldIDs before free - Addr: $', IntToHex(NativeUInt(@S.worldIDs), SizeOf(Pointer)*2), 
+            ', Data: $', IntToHex(NativeUInt(Pointer(S.worldIDs.Data)), SizeOf(Pointer)*2), 
+            ', Size: ', Length(S.worldIDs.Data) * SizeOf(S.worldIDs.Data[0]), ' bytes');
+    
+    // Free the tile map
+    FreeTileMap(S.worldIDs);
+    
+    // Validate the tile map was properly cleared
+    if (Length(S.worldIDs.Data) <> 0) or (S.worldIDs.Width <> 0) or (S.worldIDs.Height <> 0) then
+      writeln('    WARNING: TileMap not properly reset after FreeTileMap');
+      
+    writeln('    worldIDs after free - Addr: $', IntToHex(NativeUInt(@S.worldIDs), SizeOf(Pointer)*2), 
+            ', Data: $', IntToHex(NativeUInt(Pointer(S.worldIDs.Data)), SizeOf(Pointer)*2), 
+            ', Size: ', Length(S.worldIDs.Data) * SizeOf(S.worldIDs.Data[0]), ' bytes');
+  except
+    on E: Exception do
+    begin
+      writeln('    ERROR freeing worldIDs: ', E.ClassName, ': ', E.Message);
+      // Try to recover by forcing the array to nil
+      SetLength(S.worldIDs.Data, 0);
+      S.worldIDs.Width := 0;
+      S.worldIDs.Height := 0;
+      S.worldIDs.IndexSize := 0;
+    end;
+  end;
+  
+  writeln('  Previous map resources freed successfully.');
+  
+  // Log memory addresses before freeing
+  writeln('  Memory addresses before freeing:');
+  LogMemory('univPixels', S.univPixels);
+  LogMemory('landPixels', S.landPixels);
+  LogMemory('townPixels', S.townPixels);
+  LogMemory('mergedPixels', S.mergedPixels);
   
   // Free and nil pixel data
+  writeln('  Freeing pixel data...');
   if S.univPixels <> nil then 
   begin
     FreePixels(S.univPixels);
@@ -511,66 +577,213 @@ begin
     FreePixels(S.mergedPixels);
     S.mergedPixels := nil;
   end;
+  writeln('  Pixel data freed.');
 
   // Initialize structures to known state
-  FillChar(S.tiles, SizeOf(S.tiles), 0);
-  FillChar(S.drawMapA, SizeOf(S.drawMapA), 0);
-  FillChar(S.drawMapB, SizeOf(S.drawMapB), 0);
-  FillChar(S.visibilityMap, SizeOf(S.visibilityMap), 0);
-  FillChar(S.worldIDs, SizeOf(S.worldIDs), 0);
-  
-  S.univCount := 0;
-  S.landCount := 0;
-  S.townCount := 0;
-  S.mergedCount := 0;
-  
-  S.CurrentMapType := NewMapType;
+  writeln('  Initializing structures...');
+  try
+    FillChar(S.tiles, SizeOf(S.tiles), 0);
+    S.tiles.Atlas := nil;
+    
+    // Initialize draw maps with proper dimensions
+    S.drawMapA.Width := 0;
+    S.drawMapA.Height := 0;
+    S.drawMapA.IndexSize := 0;
+    SetLength(S.drawMapA.Data, 0);
+    
+    S.drawMapB.Width := 0;
+    S.drawMapB.Height := 0;
+    S.drawMapB.IndexSize := 0;
+    SetLength(S.drawMapB.Data, 0);
+    
+    // Initialize world IDs
+    try
+      writeln('  Initializing worldIDs - Size: ', MapW, 'x', MapH, ', Total bytes: ', MapW * MapH * SizeOf(Word));
+      
+      // Clear any existing data first
+      SetLength(S.worldIDs.Data, 0);
+      S.worldIDs.Width := 0;
+      S.worldIDs.Height := 0;
+      S.worldIDs.IndexSize := 0;
+      
+      // Allocate new data
+      SetLength(S.worldIDs.Data, MapW * MapH);
+      S.worldIDs.Width := MapW;
+      S.worldIDs.Height := MapH;
+      S.worldIDs.IndexSize := 2; // 16-bit indices
+      
+      // Initialize to zero
+      FillChar(S.worldIDs.Data[0], Length(S.worldIDs.Data) * SizeOf(Word), 0);
+      
+      writeln('    worldIDs after init - Addr: $', IntToHex(NativeUInt(@S.worldIDs), SizeOf(Pointer)*2), 
+              ', Data: $', IntToHex(NativeUInt(Pointer(S.worldIDs.Data)), SizeOf(Pointer)*2), 
+              ', Size: ', Length(S.worldIDs.Data) * SizeOf(S.worldIDs.Data[0]), ' bytes');
+    except
+      on E: Exception do
+      begin
+        writeln('  ERROR initializing worldIDs: ', E.ClassName, ': ', E.Message);
+        // Ensure we don't leave invalid state
+        SetLength(S.worldIDs.Data, 0);
+        S.worldIDs.Width := 0;
+        S.worldIDs.Height := 0;
+        S.worldIDs.IndexSize := 0;
+        raise; // Re-raise to fail the map load
+      end;
+    end;
+    
+    // Initialize visibility map
+    S.visibilityMap.Width := 0;
+    S.visibilityMap.Height := 0;
+    SetLength(S.visibilityMap.Data, 0);
+    
+    S.univCount := 0;
+    S.landCount := 0;
+    S.townCount := 0;
+    S.mergedCount := 0;
+    writeln('  Structures initialized.');
+  except
+    on E: Exception do
+    begin
+      writeln('  Error initializing structures: ', E.Message);
+      raise;
+    end;
+  end;
 
+  // Set the new map type before loading
+  S.CurrentMapType := NewMapType;
+  
   // Load tilesets and build draw maps based on the new map type
+  writeln('  Loading new map type: ', Ord(NewMapType));
   case NewMapType of
     mtWorld:
     begin
-      FullPath := DataPath(S.DataDir, 'WORLD.MAP');
-      writeln('Loading WORLD.MAP from: ', FullPath);
-      S.worldIDs := LoadMAPOrdered(FullPath, 110, 100, 1, True);
-      writeln('WORLD.MAP loaded. Width: ', S.worldIDs.Width, ', Height: ', S.worldIDs.Height);
-      
-      FullPath := DataPath(S.DataDir, 'UNIV.CON');
-      writeln('Loading UNIV.CON from: ', FullPath);
-      if not LoadCON(FullPath, S.univPixels, S.univCount, False, True) then
-        writeln('Failed to load UNIV.CON');
-      
-      FullPath := DataPath(S.DataDir, 'LAND.CON');
-      writeln('Loading LAND.CON from: ', FullPath);
-      if not LoadCON(FullPath, S.landPixels, S.landCount, False, True) then
-        writeln('Failed to load LAND.CON');
+      try
+        writeln('  Loading WORLD.MAP...');
+        FullPath := DataPath(S.DataDir, 'WORLD.MAP');
+        writeln('  Path: ', FullPath);
+        S.worldIDs := LoadMAPOrdered(FullPath, 110, 100, 1, True);
+        writeln('  WORLD.MAP loaded. Width: ', S.worldIDs.Width, ', Height: ', S.worldIDs.Height);
+        
+        writeln('  Loading UNIV.CON...');
+        FullPath := DataPath(S.DataDir, 'UNIV.CON');
+        writeln('  Path: ', FullPath);
+        if not LoadCON(FullPath, S.univPixels, S.univCount, False, True) then
+          writeln('  Failed to load UNIV.CON');
+        
+        writeln('  Loading LAND.CON...');
+        FullPath := DataPath(S.DataDir, 'LAND.CON');
+        writeln('  Path: ', FullPath);
+        if not LoadCON(FullPath, S.landPixels, S.landCount, False, True) then
+          writeln('  Failed to load LAND.CON');
 
-      // Manually concatenate tilesets to ensure correct order: UNIV then LAND
-      S.mergedCount := S.univCount + S.landCount;
-      GetMem(S.mergedPixels, S.mergedCount * TILE_W * TILE_H * SizeOf(UInt32));
-      System.Move(S.univPixels^, S.mergedPixels^, S.univCount * TILE_W * TILE_H * SizeOf(UInt32));
-      System.Move(S.landPixels^, Pointer(NativeUInt(S.mergedPixels) + S.univCount * TILE_W * TILE_H * SizeOf(UInt32))^, S.landCount * TILE_W * TILE_H * SizeOf(UInt32));
-      BuildTileTexture(R.FSDLRenderer, S.tiles, S.mergedPixels, S.mergedCount);
-      BuildDrawMapForWorld(S.drawMapA, S, False);
-      BuildDrawMapForWorld(S.drawMapB, S, True);
-      BuildReverseMap(S);
+        // Manually concatenate tilesets to ensure correct order: UNIV then LAND
+        writeln('  Merging tilesets...');
+        S.mergedCount := S.univCount + S.landCount;
+        writeln('  Allocating ', S.mergedCount * TILE_W * TILE_H * SizeOf(UInt32), ' bytes for merged pixels...');
+        GetMem(S.mergedPixels, S.mergedCount * TILE_W * TILE_H * SizeOf(UInt32));
+        
+        writeln('  Copying UNIV tiles...');
+        System.Move(S.univPixels^, S.mergedPixels^, S.univCount * TILE_W * TILE_H * SizeOf(UInt32));
+        
+        writeln('  Copying LAND tiles...');
+        System.Move(S.landPixels^, Pointer(NativeUInt(S.mergedPixels) + S.univCount * TILE_W * TILE_H * SizeOf(UInt32))^, S.landCount * TILE_W * TILE_H * SizeOf(UInt32));
+        
+        writeln('  Building tile texture...');
+        BuildTileTexture(R.FSDLRenderer, S.tiles, S.mergedPixels, S.mergedCount);
+        
+        writeln('  Building draw maps...');
+        BuildDrawMapForWorld(S.drawMapA, S, False);
+        BuildDrawMapForWorld(S.drawMapB, S, True);
+        
+        writeln('  Building reverse map...');
+        BuildReverseMap(S);
+        
+        writeln('  World map loading complete.');
+      except
+        on E: Exception do
+        begin
+          writeln('  Error loading world map: ', E.Message);
+          raise;
+        end;
+      end;
     end;
     mtTown, mtCastle:
     begin
-      S.worldIDs := LoadMAPSlice(DataPath(S.DataDir, MapFile), MapW, MapH, 1, IsColMajor, MapIndex);
-      LoadCON(DataPath(S.DataDir, 'UNIV.CON'), S.univPixels, S.univCount, False, True);
-      LoadCON(DataPath(S.DataDir, 'TOWN.CON'), S.townPixels, S.townCount, True, True);
-      MergeTilesets(S.univPixels, S.univCount, S.townPixels, S.townCount, S.mergedPixels, S.mergedCount);
-      BuildTileTexture(R.FSDLRenderer, S.tiles, S.mergedPixels, S.mergedCount);
+      try
+        writeln('  Loading town map: ', MapFile);
+        try
+          S.worldIDs := LoadMAPSlice(DataPath(S.DataDir, MapFile), MapW, MapH, 1, IsColMajor, MapIndex);
+          writeln('  Town map loaded successfully');
+          
+          writeln('  Loading UNIV.CON...');
+          if not LoadCON(DataPath(S.DataDir, 'UNIV.CON'), S.univPixels, S.univCount, False, True) then
+            raise Exception.Create('Failed to load UNIV.CON');
+          writeln('  UNIV.CON loaded: ', S.univCount, ' tiles');
+          writeln('  Loading TOWN.CON...');
+          S.townPixels := nil;
+          S.townCount := 0;
+          if not LoadCON(DataPath(S.DataDir, 'TOWN.CON'), S.townPixels, S.townCount, False, True) then
+            raise Exception.Create('Failed to load TOWN.CON');
+          if (S.townPixels = nil) or (S.townCount = 0) then
+            raise Exception.Create('Failed to load TOWN.CON - no data loaded');
+            
+          writeln('  Merging tilesets...');
+          if S.mergedPixels <> nil then
+          begin
+            FreePixels(S.mergedPixels);
+            S.mergedPixels := nil;
+            S.mergedCount := 0;
+          end;
+            
+          if not MergeTilesets(S.univPixels, S.univCount, S.townPixels, S.townCount, S.mergedPixels, S.mergedCount) then
+            raise Exception.Create('Failed to merge tilesets');
+            
+          writeln('  Building tile texture...');
+          FreeTileSet(S.tiles);
+          BuildTileTexture(R.FSDLRenderer, S.tiles, S.mergedPixels, S.mergedCount);
+          if S.tiles.Atlas = nil then
+            raise Exception.Create('Failed to build tile texture');
 
-            // The debug tile viewer now uses the main S.tiles, so no separate texture is needed.
-
-      BuildDrawMapForTown(S.drawMapA, S, False);
-      S.drawMapB.Width := S.drawMapA.Width; // No animation for now
-      S.drawMapB.Height := S.drawMapA.Height;
-      S.drawMapB.IndexSize := S.drawMapA.IndexSize;
-      S.drawMapB.Data := Copy(S.drawMapA.Data);
-      BuildReverseMap(S);
+          writeln('  Building draw map...');
+          SetLength(S.drawMapA.Data, 0);
+          BuildDrawMapForTown(S.drawMapA, S, False);
+          if Length(S.drawMapA.Data) = 0 then
+            raise Exception.Create('Failed to build draw map - no data generated');
+            
+          writeln('  Setting up animation map...');
+          S.drawMapB.Width := S.drawMapA.Width;
+          S.drawMapB.Height := S.drawMapA.Height;
+          S.drawMapB.IndexSize := S.drawMapA.IndexSize;
+          SetLength(S.drawMapB.Data, Length(S.drawMapA.Data));
+          if Length(S.drawMapA.Data) > 0 then
+            Move(S.drawMapA.Data[0], S.drawMapB.Data[0], Length(S.drawMapA.Data) * SizeOf(S.drawMapA.Data[0]));
+            
+          writeln('  Town map loading completed successfully');
+        except
+          on E: Exception do
+          begin
+            writeln('  ERROR in town map loading: ', E.ClassName, ': ', E.Message);
+            // Clean up any partially allocated resources
+            if S.mergedPixels <> nil then
+            begin
+              FreePixels(S.mergedPixels);
+              S.mergedPixels := nil;
+            end;
+            raise; // Re-raise the exception
+          end;
+        end;
+        
+        writeln('  Building reverse map...');
+        BuildReverseMap(S);
+        
+        writeln('  Town map loading complete.');
+      except
+        on E: Exception do
+        begin
+          writeln('  Error loading town map: ', E.Message);
+          raise;
+        end;
+      end;
     end;
     mtDungeon, mtRuin, mtVampyrCastle:
     begin
@@ -586,22 +799,37 @@ begin
     end;
   end;
 
-  // Initialize visibility map for the new map
-  S.visibilityMap.Width := MapW;
-  S.visibilityMap.Height := MapH;
-  SetLength(S.visibilityMap.Data, MapW * MapH);
-  if Length(S.visibilityMap.Data) > 0 then
-    FillChar(S.visibilityMap.Data[0], Length(S.visibilityMap.Data), 0);
+  try
+    // Initialize visibility map for the new map
+    writeln('  Initializing visibility map...');
+    writeln('  Visibility map size: ', MapW, 'x', MapH);
+    S.visibilityMap.Width := MapW;
+    S.visibilityMap.Height := MapH;
+    writeln('  Allocating ', (MapW * MapH), ' bytes for visibility map');
+    SetLength(S.visibilityMap.Data, MapW * MapH);
+    if Length(S.visibilityMap.Data) > 0 then
+      FillChar(S.visibilityMap.Data[0], Length(S.visibilityMap.Data), 0);
 
-  // Update player position
-  S.Player.XLoc := NewPlayerX;
-  S.Player.YLoc := NewPlayerY;
+    // Update player position
+    writeln('  Setting player position to (', NewPlayerX, ', ', NewPlayerY, ')');
+    S.Player.XLoc := NewPlayerX;
+    S.Player.YLoc := NewPlayerY;
 
-  // Reset camera and animation state
-  S.cameraX := 0;
-  S.cameraY := 0;
-  S.animAltNow := False;
-  S.nextSwap := SDL_GetTicks + S.animDelayMs;
+    // Reset camera and animation state
+    writeln('  Resetting camera and animation state...');
+    S.cameraX := 0;
+    S.cameraY := 0;
+    S.animAltNow := False;
+    S.nextSwap := SDL_GetTicks + S.animDelayMs;
+    
+    writeln('LoadNewMap completed successfully.');
+  except
+    on E: Exception do
+    begin
+      writeln('  Error in final setup: ', E.Message);
+      raise;
+    end;
+  end;
 end;
 
 procedure TryExitLocation(var S: TWorldState; var R: TRenderer);
@@ -690,7 +918,9 @@ begin
   if E.type_ = SDL_KEYDOWN then
   begin
     case E.key.keysym.scancode of
-      SDL_SCANCODE_ESCAPE: Running := False;
+      SDL_SCANCODE_ESCAPE: 
+        if S.CurrentMapType = mtWorld then 
+          Running := False;
       SDL_SCANCODE_F5: S.animEnabled := not S.animEnabled;
       SDL_SCANCODE_F12:
       begin
