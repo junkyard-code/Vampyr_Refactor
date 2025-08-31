@@ -14,16 +14,19 @@ set SDL2_DIR=lib
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 if not exist "%BIN_DIR%" mkdir "%BIN_DIR%"
 
-echo === Building Vampyr World Viewer ===
+echo === Building Vampyr FB Viewer ===
 
-:: Build command
+:: Build command - explicitly list only the units we need
 %FPC% -B -WC -S2 -O2 -Mobjfpc ^
   -Fu"%SOURCE_DIR%" ^
   -Fu"resources\SDL2-for-Pascal-2.3-stable\units" ^
   -FE"%BIN_DIR%" ^
   -FU"%BUILD_DIR%" ^
   -o"%BIN_DIR%\vampyr_fb_viewer.exe" ^
-  %SOURCE_DIR%\fb_viewer.pas
+  -dUSE_SDL2 ^
+  -dNO_UGFX ^
+  -Fi"%SOURCE_DIR%" ^
+  "%SOURCE_DIR%\fb_viewer.pas"
 
 if errorlevel 1 (
   echo Build FAILED

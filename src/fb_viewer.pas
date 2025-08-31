@@ -46,6 +46,11 @@ const
   COLOR_BLACK = $FF000000;     // Black background
   COLOR_WHITE = $FFFFFFFF;     // White for text/borders
   COLOR_RED = $FFFF0000;       // Bright red for border
+  
+  // Map view state tracking
+  MapViewInitialized: Boolean = False;
+  LastPlayerX: Integer = -1;
+  LastPlayerY: Integer = -1;
   COLOR_RED_DARK = $FFA00000;  // Darker red for border outline
   COLOR_BLUE_DARK = $FF400000; // Dark blue for status area
   COLOR_GRAY_DARK = $FF202020; // Dark gray for message area
@@ -384,11 +389,11 @@ writeln('Loading World Map');
   try
     Reset(F, 1);
     try
-      for y := 0 to 99 do
-        for x := 0 to 109 do
-        begin
+      for x := 0 to WORLD_HEIGHT-1 do
+        for y := 0 to WORLD_WIDTH-1 do
+          begin
           BlockRead(F, WorldMap[y, x], 1);
-          writeln('Tile: ', x, ',', y, ' = ', WorldMap[y, x]);
+          writeln('Tile: ', y, ',', x, ' = ', WorldMap[y, x]);
         end;
       finally
       CloseFile(F);
@@ -417,25 +422,75 @@ end;
 procedure MovePlayer(dx, dy: Integer);
 var
   newX, newY: Integer;
+  moved: Boolean;
 begin
   newX := PlayerX + dx;
   newY := PlayerY + dy;
+  moved := False;
   
   if IsValidPosition(newX, newY) then
   begin
     PlayerX := newX;
     PlayerY := newY;
+    moved := True;
+  end;
+  
+  // If the player moved, mark the map view as dirty
+  if moved then
+  begin
+    MarkMapViewDirty;
   end;
 end;
 
 //************ Draw Map View ************
 
+{*
+  Draws a 7x7 grid of tiles centered on the player's position.
+  Only redraws tiles that have changed from the previous frame.
+  Uses dirty region tracking to minimize screen updates.
+*}
 procedure DrawMapView;
 var
   tx, ty, x, y, dx, dy, wx, wy: Integer;
   tileColor: LongWord;
   tileSizeX, tileSizeY: Integer;
+  // Store previous player position for dirty region calculation
+  PrevPlayerX, PrevPlayerY: Integer;
+  // Store previous map state for comparison
+  PrevMap: array[-3..3, -3..3] of Byte;
+  // Store previous colors for comparison
+  PrevColors: array[-3..3, -3..3] of LongWord;
+  // Track if we need to redraw the entire map view
+  RedrawAll, needsRedraw: Boolean;
+  // Player position variables
+  px, py: Integer;
+  bgColor: LongWord;
 begin
+  // Map view state tracking
+  
+  // Track if map needs to be completely redrawn
+  RedrawAll := False;
+  
+  // Initialize previous positions if not already set
+  if not MapViewInitialized then
+  begin
+    MapViewInitialized := True;
+    LastPlayerX := PlayerX;
+    LastPlayerY := PlayerY;
+  end;
+  
+  // Check if player moved or if we need to redraw everything
+  if not MapViewInitialized or (PlayerX <> LastPlayerX) or (PlayerY <> LastPlayerY) then
+  begin
+    RedrawAll := True;
+    
+    // Store current player position for next frame
+    PrevPlayerX := LastPlayerX;
+    PrevPlayerY := LastPlayerY;
+    LastPlayerX := PlayerX;
+    LastPlayerY := PlayerY;
+  end;
+  
   // Calculate tile size to fit 7x7 grid in the map view area
   tileSizeX := MAP_VIEW_WIDTH div 7;
   tileSizeY := MAP_VIEW_HEIGHT div 7;
@@ -465,104 +520,276 @@ begin
           tileColor := $FF000000;  // Black for invalid tile IDs
       end;
       
-      // Draw tile background
-      for dy := 0 to tileSizeY - 1 do
+      // Check if we need to redraw this tile
+      needsRedraw := RedrawAll;
+      if not needsRedraw then
+      begin
+        // Check if this tile's content changed
+        if (wx >= 0) and (wx < 110) and (wy >= 0) and (wy < 100) then
+          needsRedraw := (WorldMap[wy, wx] <> PrevMap[ty, tx]) or 
+                        (tileColor <> PrevColors[ty, tx]);
+      end;
+      
+      if needsRedraw then
+      begin
+        // Draw tile background
+        for dy := 0 to tileSizeY - 1 do
+          for dx := 0 to tileSizeX - 1 do
+            PutPixel(x + dx, y + dy, tileColor);
+        
+        // Draw grid lines (white border)
         for dx := 0 to tileSizeX - 1 do
-          PutPixel(x + dx, y + dy, tileColor);
-      
-      // Draw grid lines (white border)
-      for dx := 0 to tileSizeX - 1 do
-      begin
-        PutPixel(x + dx, y, COLOR_WHITE);
-        PutPixel(x + dx, y + tileSizeY - 1, COLOR_WHITE);
+        begin
+          PutPixel(x + dx, y, COLOR_WHITE);
+          PutPixel(x + dx, y + tileSizeY - 1, COLOR_WHITE);
+        end;
+        for dy := 0 to tileSizeY - 1 do
+        begin
+          PutPixel(x, y + dy, COLOR_WHITE);
+          PutPixel(x + tileSizeX - 1, y + dy, COLOR_WHITE);
+        end;
+        
+        // Update previous state
+        if (wx >= 0) and (wx < 110) and (wy >= 0) and (wy < 100) then
+          PrevMap[ty, tx] := WorldMap[wy, wx]
+        else
+          PrevMap[ty, tx] := 0;
+        PrevColors[ty, tx] := tileColor;
       end;
-      for dy := 0 to tileSizeY - 1 do
-      begin
-        PutPixel(x, y + dy, COLOR_WHITE);
-        PutPixel(x + tileSizeX - 1, y + dy, COLOR_WHITE);
-      end;
       
-      // Draw player in center tile
+      // Always redraw player (if in this tile)
       if (tx = 0) and (ty = 0) then
       begin
+        // Clear previous player position if moved
+        if RedrawAll and (PrevPlayerX <> -1) and 
+           ((PrevPlayerX <> PlayerX) or (PrevPlayerY <> PlayerY)) then
+        begin
+          // Redraw the tile where player was
+          px := MAP_VIEW_X + (PlayerX - PrevPlayerX + 3) * tileSizeX;
+          py := MAP_VIEW_Y + (PlayerY - PrevPlayerY + 3) * tileSizeY;
+          bgColor := COLOR_BLACK;
+          if (PrevPlayerX >= 0) and (PrevPlayerX < 110) and 
+             (PrevPlayerY >= 0) and (PrevPlayerY < 100) then
+          begin
+            if WorldMap[PrevPlayerY, PrevPlayerX] <= High(TILE_COLORS) then
+              bgColor := TILE_COLORS[WorldMap[PrevPlayerY, PrevPlayerX]]
+            else
+              bgColor := $FF000000;
+          end;
+          
+          // Redraw the tile
+          for dy := 0 to tileSizeY - 1 do
+            for dx := 0 to tileSizeX - 1 do
+              PutPixel(px + dx, py + dy, bgColor);
+              
+          // Redraw grid lines
+          for dx := 0 to tileSizeX - 1 do
+          begin
+            PutPixel(px + dx, py, COLOR_WHITE);
+            PutPixel(px + dx, py + tileSizeY - 1, COLOR_WHITE);
+          end;
+          for dy := 0 to tileSizeY - 1 do
+          begin
+            PutPixel(px, py + dy, COLOR_WHITE);
+            PutPixel(px + tileSizeX - 1, py + dy, COLOR_WHITE);
+          end;
+        end;
+        
+        // Draw player
         for dy := -4 to 4 do
           for dx := -4 to 4 do
             if (dx*dx + dy*dy) <= 16 then  // Draw a circle
-              PutPixel(x + (tileSizeX div 2) + dx, y + (tileSizeY div 2) + dy, COLOR_GREEN);
+              PutPixel(x + (tileSizeX div 2) + dx, 
+                      y + (tileSizeY div 2) + dy, 
+                      COLOR_GREEN);
       end;
     end;
   end;
   
-  // Draw coordinates
-  // Note: You'll need to implement a text rendering function for coordinates
+  // Mark the entire map view as dirty if we made any changes
+  if RedrawAll then
+    MarkMapViewDirty;
 end;
 
 //************ Draw Status Area ************
 
+var
+  // Track if UI areas were drawn before
+  StatusAreaDrawn: Boolean = False;
+  MessageAreaDrawn: Boolean = False;
+  FirstFrame: Boolean = True;
+
 procedure DrawStatusArea;
 var
   x, y: Integer;
+  needsRedraw: Boolean;
 begin
-  // Draw status area background (dark blue)
-  for y := STATUS_AREA_Y+76 to STATUS_AREA_Y + 248 do
-    for x := STATUS_AREA_X to SCREEN_WIDTH - BORDER_SIZE - 5 do
-      PutPixel(x, y, $FF400000);  // Dark blue
+  // Only redraw if this is the first draw or if explicitly marked dirty
+  needsRedraw := not StatusAreaDrawn;
+  StatusAreaDrawn := True;
   
-  // Draw border around status area
-  //for x := STATUS_AREA_X - 2 to SCREEN_WIDTH - BORDER_SIZE - 3 do
-  //begin
-  //  PutPixel(x, STATUS_AREA_Y + 6, COLOR_WHITE);
-  //  PutPixel(x, STATUS_AREA_Y + 160, COLOR_WHITE);
-  //end;
-  //for y := STATUS_AREA_Y + 6 to STATUS_AREA_Y + 160 do
-  //begin
-  //  PutPixel(STATUS_AREA_X - 2, y, COLOR_WHITE);
-  //  PutPixel(SCREEN_WIDTH - BORDER_SIZE - 3, y, COLOR_WHITE);
-  //end;
-  
-  // TODO: Add player stats and logo
+  if needsRedraw then
+  begin
+    // Draw status area background (dark blue)
+    for y := STATUS_AREA_Y+76 to STATUS_AREA_Y + 248 do
+      for x := STATUS_AREA_X to SCREEN_WIDTH - BORDER_SIZE - 5 do
+        PutPixel(x, y, $FF400000);  // Dark blue
+        
+    // Draw status area border (red)
+    // Draw top and bottom borders
+    for x := STATUS_AREA_X - 1 to SCREEN_WIDTH - BORDER_SIZE - 4 do
+    begin
+      PutPixel(x, STATUS_AREA_Y + 75, COLOR_RED);
+      PutPixel(x, STATUS_AREA_Y + 249, COLOR_RED);
+    end;
+    
+    // Draw left and right borders
+    for y := STATUS_AREA_Y + 75 to STATUS_AREA_Y + 249 do
+    begin
+      PutPixel(STATUS_AREA_X - 1, y, COLOR_RED);
+      PutPixel(SCREEN_WIDTH - BORDER_SIZE - 4, y, COLOR_RED);
+    end;
+    
+    // Mark the status area as dirty
+    //MarkStatusAreaDirty;
+    
+    // TODO: Add actual status information
+    // For now, just draw some placeholder text
+    // DrawText('STATUS', STATUS_AREA_X + 10, STATUS_AREA_Y + 85, COLOR_WHITE);
+  end;
 end;
 
 //************ Draw Message Area ************
 
 procedure DrawMessageArea;
 var
-  x, y, dy: Integer;
+  x, y: Integer;
+  needsRedraw: Boolean;
 begin
-  // Draw message area background (dark gray)
-  // Start 5 pixels below the top of the message area to account for border
-  // and leave 5 pixels at the bottom for the border
-  for y := MESSAGE_AREA_Y + 7 to SCREEN_HEIGHT - BORDER_SIZE do
-    for x := BORDER_SIZE to SCREEN_WIDTH - BORDER_SIZE do
-      PutPixel(x, y, $FF202020);
+  // Only redraw if this is the first draw or if explicitly marked dirty
+  needsRedraw := not StatusAreaDrawn;
+  StatusAreaDrawn := True;
   
-  // Draw border around message area - adjust to match the 5-pixel border style
-  //for x := BORDER_SIZE to SCREEN_WIDTH - BORDER_SIZE - 1 do
-  //begin
-    // Top border of message area (5 pixels high)
-    //for dy := 0 to 4 do
-     // PutPixel(x, MESSAGE_AREA_Y + dy, COLOR_RED);
-      
-    // Bottom border (already handled by the main border)
-  //end;
+  if needsRedraw then
+  begin
+    // Draw message area background (dark gray)
+    // Start 5 pixels below the top of the message area to account for border
+    // and leave 5 pixels at the bottom for the border
+    for y := MESSAGE_AREA_Y + 7 to SCREEN_HEIGHT - BORDER_SIZE do
+      for x := BORDER_SIZE to SCREEN_WIDTH - BORDER_SIZE do
+        PutPixel(x, y, $FF202020);
+    
+    // Mark the message area as dirty
+    //MarkMessageAreaDirty;
+    
+    // TODO: Add message display logic here
+    // For now, just draw some placeholder text
+    // DrawText('MESSAGES', BORDER_SIZE + 10, MESSAGE_AREA_Y + 15, COLOR_WHITE);
+  end;
 end;
 
 //************ Render Frame ************
 
 procedure RenderFrame;
 begin
-  // Clear screen to black
-  ClearFB(COLOR_BLACK);
-  
-  // Draw UI elements
-  DrawBorder;
-  DrawMapView;
-  DrawStatusArea;
-  DrawVampyrLogo;
-  DrawMessageArea;
-  
-  // Update the display
-  Present;
+  try
+    //WriteLn('RenderFrame: Start');
+    
+    try
+      if FirstFrame then
+      begin
+        WriteLn('RenderFrame: First frame');
+        // On first frame, mark all regions as dirty to ensure everything is drawn
+        FirstFrame := False;
+        MarkAllRegionsDirty;
+        ClearFB(COLOR_BLACK);
+        WriteLn('RenderFrame: Cleared framebuffer');
+        DrawBorder;
+        WriteLn('RenderFrame: Drew border');
+        DrawVampyrLogo;
+        WriteLn('RenderFrame: Drew Vampyr logo');
+        WriteLn('RenderFrame: First frame drawing complete');
+      end;
+      
+      // Only draw regions that are dirty
+      if IsRegionDirty(riMapView) then
+      begin
+        WriteLn('RenderFrame: Drawing map view (dirty)');
+        DrawMapView;
+        WriteLn('RenderFrame: Map view drawn');
+      end;
+      
+      // Draw UI elements if their regions are dirty
+      if IsRegionDirty(riStatusArea) then
+      begin
+        WriteLn('RenderFrame: Drawing status area (dirty)');
+        DrawStatusArea;
+        WriteLn('RenderFrame: Status area drawn');
+      end;
+      
+      if IsRegionDirty(riMessageArea) then
+      begin
+        WriteLn('RenderFrame: Drawing message area (dirty)');
+        DrawMessageArea;
+        WriteLn('RenderFrame: Message area drawn');
+      end;
+      
+      // Only present if there were dirty regions
+      if AnyDirty then
+      begin
+        WriteLn('RenderFrame: Presenting dirty regions');
+        try
+          Present;
+          //WriteLn('RenderFrame: Present completed');
+        except
+          on E: Exception do
+          begin
+            WriteLn('Error in Present: ', E.ClassName, ' - ', E.Message);
+            WriteLn('Dumping framebuffer info:');
+            WriteLn('  ScreenW: ', ScreenW);
+            WriteLn('  ScreenH: ', ScreenH);
+            WriteLn('  FB Length: ', Length(FB));
+            raise;
+          end;
+        end;
+        
+        // Mark all regions as clean after presenting
+        //WriteLn('RenderFrame: Marking regions clean');
+        MarkAllRegionsClean;
+      end
+      else
+      begin
+        //WriteLn('RenderFrame: No dirty regions, skipping present');
+        // Small delay to prevent CPU overuse when nothing changes
+        SDL_Delay(16);
+      end;
+      //WriteLn('RenderFrame: Complete');
+    except
+      on E: Exception do
+      begin
+        WriteLn('Error in frame rendering: ', E.ClassName, ' - ', E.Message);
+        WriteLn('FrameCount: ', FrameCount);
+        WriteLn('FirstFrame: ', FirstFrame);
+        raise;
+      end;
+    end;
+    
+    // Small delay to prevent CPU overuse
+    SDL_Delay(1);
+    
+  except
+    on E: Exception do
+    begin
+      WriteLn('FATAL ERROR in RenderFrame: ', E.ClassName, ' - ', E.Message);
+      WriteLn('FrameCount: ', FrameCount);
+      WriteLn('FirstFrame: ', FirstFrame);
+      WriteLn('Screen dimensions: ', ScreenW, 'x', ScreenH);
+      WriteLn('FB Length: ', Length(FB));
+      WriteLn('Press any key to exit...');
+      ReadLn;
+      Halt(1);
+    end;
+  end;
 end;
 
 //************ Handle Input ************
@@ -571,16 +798,17 @@ procedure HandleInput;
 begin
   while SDL_PollEvent(@Event) <> 0 do
   begin
-    case Event.type_ of
-      SDL_QUITEV: Running := False;
-      SDL_KEYDOWN:
-        case Event.key.keysym.sym of
-          SDLK_ESCAPE: Running := False;
-          SDLK_LEFT: MovePlayer(-1, 0);
-          SDLK_RIGHT: MovePlayer(1, 0);
-          SDLK_UP: MovePlayer(0, -1);
-          SDLK_DOWN: MovePlayer(0, 1);
-        end;
+    if Event.type_ = SDL_QUITEV then
+      Running := False
+    else if Event.type_ = SDL_KEYDOWN then
+    begin
+      case TSDL_keysym(Event.key.keysym).sym of
+        SDLK_ESCAPE: Running := False;
+        SDLK_LEFT: MovePlayer(-1, 0);
+        SDLK_RIGHT: MovePlayer(1, 0);
+        SDLK_UP: MovePlayer(0, -1);
+        SDLK_DOWN: MovePlayer(0, 1);
+      end;
     end;
   end;
 end;
@@ -597,7 +825,7 @@ begin
   end;
   
   try
-    // Initialize game state
+    WriteLn('Initializing game state...');
     InitializeWorld;
     writeln('World Init done -- rungame');
     Running := True;
@@ -606,7 +834,7 @@ begin
     
     // Load world map
     WriteLn('Loading world map...');
-    LoadWorldMap('..\data\world.map');
+    LoadWorldMap('data\WORLD.MAP');
     WriteLn('World map loaded. Dimensions: ', WORLD_WIDTH, 'x', WORLD_HEIGHT);
     
     // Print sample tile information
@@ -614,22 +842,28 @@ begin
     WriteLn('  TILE_COLORS has ', High(TILE_COLORS) + 1, ' entries (0-', High(TILE_COLORS), ')');
     
     // Print tile ID at player position
-  WriteLn('Player tile ID: ', IntToHex(WorldMap[PlayerY, PlayerX], 2), 
-    ' at [', PlayerY, ',', PlayerX, ']');
-  
-  // Print a few sample tile IDs
-  WriteLn('Sample tile IDs:');
-  WriteLn('  [0,0]: ', IntToHex(WorldMap[0,0], 2));
-  WriteLn('  [', PlayerY, ',', PlayerX-1, ']: ', IntToHex(WorldMap[PlayerY, PlayerX-1], 2));
-  WriteLn('  [', PlayerY, ',', PlayerX+1, ']: ', IntToHex(WorldMap[PlayerY, PlayerX+1], 2));
-  WriteLn('  [', WORLD_HEIGHT-1, ',', WORLD_WIDTH-1, ']: ', 
-    IntToHex(WorldMap[WORLD_HEIGHT-1, WORLD_WIDTH-1], 2));
+    WriteLn('Player tile ID: ', IntToHex(WorldMap[PlayerY, PlayerX], 2), 
+      ' at [', PlayerY, ',', PlayerX, ']');
     
-    // Check for out of range tile IDs
-    if (WorldMap[PlayerY, PlayerX] > High(TILE_COLORS)) then
-      WriteLn('WARNING: Tile ID ', WorldMap[PlayerY, PlayerX], ' at player position is out of range for TILE_COLORS (max=', High(TILE_COLORS), ')');
-      
+    // Print sample tile IDs
+    WriteLn('Sample tile IDs:');
+    WriteLn('  [0,0]: ', IntToHex(WorldMap[0, 0], 2));
+    WriteLn('  [50,54]: ', IntToHex(WorldMap[50, 54], 2));
+    WriteLn('  [50,56]: ', IntToHex(WorldMap[50, 56], 2));
+    WriteLn('  [109,99]: ', IntToHex(WorldMap[109, 99], 2));
+    
+    // Load Vampyr logo
+    WriteLn('Loading Vampyr logo...');
+    if not LoadVampyrLogo then
+      WriteLn('Warning: Could not load Vampyr logo');
+    WriteLn('Vampyr logo loaded successfully');
+    
+    WriteLn('Entering main game loop...');
     // Run the game
+   
+      MarkStatusAreaDirty;
+      MarkMessageAreaDirty; 
+   
     while Running do
     begin
       HandleInput;
@@ -645,39 +879,14 @@ begin
   WriteLn('Average FPS: ', FrameCount / ((SDL_GetTicks() - LastTime) / 1000):0:2);
 end;
 
-
 //************ Main Begin ************
 
 begin
-  // Initialize SDL and framebuffer with 1:1 pixel scaling
-  if not GfxInit(SCREEN_WIDTH, SCREEN_HEIGHT, 1) then
-  begin
-    WriteLn('Failed to initialize graphics');
-    Halt(1);
-  end;
-  
+  // Run the game with all initialization handled in RunGame
   try
-    // Initialize game state
-    InitializeWorld;
-    Running := True;
-    FrameCount := 0;
-    LastTime := SDL_GetTicks();
-    
-    // Main game loop
-    //while Running do
-    //begin
-      //HandleInput;
-      //RenderFrame;
-      
-      // Simple frame rate limiting
-      //SDL_Delay(16);  // ~60 FPS
-    //end;
-
-   RunGame;
-
-  finally
-    GfxQuit;
+    RunGame;
+  except
+    on E: Exception do
+      WriteLn('Error: ', E.Message);
   end;
-  
-  WriteLn('Average FPS: ', FrameCount / ((SDL_GetTicks() - LastTime) / 1000):0:2);
 end.
