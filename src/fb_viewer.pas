@@ -3,12 +3,16 @@ program fb_viewer;
 {$mode objfpc}{$H+}
 
 uses
-  SDL2, SysUtils, Math, ugfx_fb, uGameTypes, data_loaders;
+  SDL2, SysUtils, Math, ugfx_fb, uGameTypes, data_loaders, Classes;
 
 const
   // Original game resolution (EGA 16-color)
   ORIGINAL_WIDTH = 640;
   ORIGINAL_HEIGHT = 200;
+  
+  // World map dimensions (100 columns x 110 rows)
+  WORLD_WIDTH = 100;
+  WORLD_HEIGHT = 110;
   
   // Scaled resolution (2x original)
   SCREEN_WIDTH = 1280;   // 640 * 2
@@ -47,6 +51,39 @@ const
   COLOR_GRAY_DARK = $FF202020; // Dark gray for message area
   COLOR_GREEN = $FF00FF00;     // Green for player
   COLOR_GRAY = $FF808080;      // Medium gray for UI elements
+  
+  // Tile colors (from tile mapping - using ABGR format)
+  TILE_COLORS: array[0..21] of LongWord = (
+    $FF0000FF,  // 0: Deep Water (Blue)
+    $FF1E90FF,  // 1: Shallow Water (Dodger Blue)
+    $FF8B4513,  // 2: Bridge (Sandy Brown)
+    $FF00FF00,  // 3: Forest (Dark Green)
+    $FF55FF55,  // 4: Bushes (Light Green)
+    $FF8B4513,  // 5: Sign (Saddle Brown)
+    $FF32CD32,  // 6: Grass (Lime Green)
+    $FF808080,  // 7: Vampyr's Castle [top] (Gray)
+    $FFA9A9A9,  // 8: Town [LEFT] (Dark Gray)
+    $FFA9A9A9,  // 9: Town [RIGHT] (Dark Gray)
+    $FFA9A9A9,  // 10: Castle [LEFT] (Dark Gray)
+    $FFA9A9A9,  // 11: Ruin [LEFT] (Dark Gray)
+    $FFD2691E,  // 12: Mountains (Chocolate)
+    $FFD2691E,  // 13: Mountains with Dungeon (Chocolate)
+    $FF55FF55,  // 14: Swamp (Light Green)
+    $FF00FF00,  // 15: Tropical Trees (Dark Green)
+    $FF00008B,  // 16: Boat (Dark Blue)
+    $FFA9A9A9,  // 17: Castle [RIGHT] (Dark Gray)
+    $FFA9A9A9,  // 18: Ruin [RIGHT] (Dark Gray)
+    $FFA9A9A9,  // 19: Vampyr's Castle [Bottom] (Dark Gray)
+    $FF8B4513,  // 20: Hills (Sandy Brown)
+    $FF8B4513   // 21: Clearing (Sandy Brown)
+  );
+  
+type
+  TWorldMap = array[0..WORLD_HEIGHT-1, 0..WORLD_WIDTH-1] of Byte;  // 100x110 map
+  
+var
+  WorldMap: TWorldMap;
+  PlayerX, PlayerY: Integer;  // Player position in world coordinates
 
 type
   // Type for the Vampyr logo (145x25 pixels in original, 290x50 in 2x scale)
@@ -86,13 +123,18 @@ var
   LastTime: UInt32;
   VampyrLogo: TVampyrLogo;
   LogoLoaded: Boolean = False;
-  
+
+
+
+//************ Load Vampyr Logo ************
+
 function LoadVampyrLogo: Boolean;
 var
   F: File;
   FilePath: String;
   BytesRead: Integer;
 begin
+WriteLn('Loading Vampyr logo...LoadVampyrLogo');
   Result := False;
   FilePath := 'data\VAMPYR.001';
   
@@ -131,6 +173,9 @@ begin
   end;
 end;
 
+
+//************ EGA to RGB ************
+
 function EGAtoRGB(ColorIndex: Byte): LongWord;
 begin
   if ColorIndex > High(EGAPalette) then
@@ -139,6 +184,8 @@ begin
   with EGAPalette[ColorIndex] do
     Result := $FF000000 or (R shl 16) or (G shl 8) or B;
 end;
+
+//************ Draw Text ************
 
 procedure DrawText(x, y: Integer; const Text: String; Color: LongWord);
 var
@@ -171,6 +218,8 @@ begin
   end;
 end;
 
+//************ Draw Vampyr Logo ************
+
 procedure DrawVampyrLogo;
 const
   LOGO_SCALED_WIDTH = 580;  // 145 * 4
@@ -183,6 +232,7 @@ var
   colorIndex: Byte;
   color: LongWord;
 begin
+
   if not LogoLoaded then
   begin
     // Try to load the logo if not loaded
@@ -218,20 +268,23 @@ begin
   
 end;
 
+//************ Initialize World ************
+
 procedure InitializeWorld;
 begin
   // Initialize world state
   FillChar(World, SizeOf(World), 0);
   World.VisibilityEnabled := True;
   World.TileViewerScrollY := 0;
-  
+  writeln('World Init');
   // Load game data
-  LoadVampyrLogo;
-  
+  //LoadVampyrLogo;
   // Set up player position (example)
-  World.Player.XLoc := 0;
-  World.Player.YLoc := 0;
+  World.Player.XLoc := 8;
+  World.Player.YLoc := 8;
 end;
+
+//************ Draw Border ************
 
 procedure DrawBorder;
 var
@@ -313,53 +366,138 @@ begin
   end;
 end;
 
+//************ Load World Map ************
+
+procedure LoadWorldMap(const Filename: string);
+var
+  F: File;
+  x, y: Integer;
+begin
+writeln('Loading World Map');
+  if not FileExists(Filename) then
+  begin
+    WriteLn('Error: Could not find ', Filename);
+    Halt(1);
+  end;
+  
+  AssignFile(F, Filename);
+  try
+    Reset(F, 1);
+    try
+      for y := 0 to 99 do
+        for x := 0 to 109 do
+        begin
+          BlockRead(F, WorldMap[y, x], 1);
+          writeln('Tile: ', x, ',', y, ' = ', WorldMap[y, x]);
+        end;
+      finally
+      CloseFile(F);
+    end;
+  except
+    on E: Exception do
+    begin
+      WriteLn('Error loading world map: ', E.Message);
+      Halt(1);
+    end;
+  end;
+  
+  // Set player's starting position to [55, 50]
+  PlayerX := 55;
+  PlayerY := 50;
+end;
+
+function IsValidPosition(x, y: Integer): Boolean;
+begin
+  // Allow movement within the full map bounds (0-109 for x, 0-99 for y)
+  Result := (x >= 0) and (x < 110) and (y >= 0) and (y < 100);
+end;
+
+//************ Move Player ************
+
+procedure MovePlayer(dx, dy: Integer);
+var
+  newX, newY: Integer;
+begin
+  newX := PlayerX + dx;
+  newY := PlayerY + dy;
+  
+  if IsValidPosition(newX, newY) then
+  begin
+    PlayerX := newX;
+    PlayerY := newY;
+  end;
+end;
+
+//************ Draw Map View ************
+
 procedure DrawMapView;
 var
-  tx, ty, x, y, dx, dy: Integer;
+  tx, ty, x, y, dx, dy, wx, wy: Integer;
   tileColor: LongWord;
+  tileSizeX, tileSizeY: Integer;
 begin
-  // Draw 7x7 tile grid with 72x36 pixel tiles
-  for ty := 0 to 6 do
+  // Calculate tile size to fit 7x7 grid in the map view area
+  tileSizeX := MAP_VIEW_WIDTH div 7;
+  tileSizeY := MAP_VIEW_HEIGHT div 7;
+  
+  // Draw 7x7 grid centered on player
+  for ty := -3 to 3 do
   begin
-    for tx := 0 to 6 do
+    for tx := -3 to 3 do
     begin
-      // Calculate tile position
-      x := MAP_VIEW_X + (tx * 72);  // 72 pixels wide
-      y := MAP_VIEW_Y + (ty * 36);  // 36 pixels tall
+      // Calculate world coordinates
+      wx := PlayerX + tx;
+      wy := PlayerY + ty;
       
-      // Alternate tile colors for grid effect
-      if (tx + ty) mod 2 = 0 then
-        tileColor := $FF202020  // Dark gray
-      else
-        tileColor := $FF303030; // Slightly lighter gray
+      // Calculate screen position
+      x := MAP_VIEW_X + (tx + 3) * tileSizeX;
+      y := MAP_VIEW_Y + (ty + 3) * tileSizeY;
+      
+      // Get tile color (default to black for out of bounds)
+      tileColor := COLOR_BLACK;
+      if (wx >= 0) and (wx < 110) and (wy >= 0) and (wy < 100) then
+      begin
+      //writeln('Tile: ', wx, ',', wy, ' = ', WorldMap[wy, wx]);
+        // Use tile color from map, default to black if invalid
+        if WorldMap[wy, wx] <= High(TILE_COLORS) then
+          tileColor := TILE_COLORS[WorldMap[wy, wx]]
+        else
+          tileColor := $FF000000;  // Black for invalid tile IDs
+      end;
       
       // Draw tile background
-      for dy := 0 to 35 do
-        for dx := 0 to 71 do
+      for dy := 0 to tileSizeY - 1 do
+        for dx := 0 to tileSizeX - 1 do
           PutPixel(x + dx, y + dy, tileColor);
       
-      // Draw tile border (1 pixel white border)
-      for dx := 0 to 71 do
+      // Draw grid lines (white border)
+      for dx := 0 to tileSizeX - 1 do
       begin
-        PutPixel(x + dx, y, COLOR_WHITE);          // Top border
-        PutPixel(x + dx, y + 35, COLOR_WHITE);     // Bottom border
+        PutPixel(x + dx, y, COLOR_WHITE);
+        PutPixel(x + dx, y + tileSizeY - 1, COLOR_WHITE);
       end;
-      for dy := 0 to 35 do
+      for dy := 0 to tileSizeY - 1 do
       begin
-        PutPixel(x, y + dy, COLOR_WHITE);          // Left border
-        PutPixel(x + 71, y + dy, COLOR_WHITE);     // Right border
+        PutPixel(x, y + dy, COLOR_WHITE);
+        PutPixel(x + tileSizeX - 1, y + dy, COLOR_WHITE);
+      end;
+      
+      // Draw player in center tile
+      if (tx = 0) and (ty = 0) then
+      begin
+        for dy := -4 to 4 do
+          for dx := -4 to 4 do
+            if (dx*dx + dy*dy) <= 16 then  // Draw a circle
+              PutPixel(x + (tileSizeX div 2) + dx, y + (tileSizeY div 2) + dy, COLOR_GREEN);
       end;
     end;
   end;
   
-  // Draw player in center tile (temporary)
-  x := MAP_VIEW_X + (3 * 72) + 36;  // Center of 4th tile (0-based index 3)
-  y := MAP_VIEW_Y + (3 * 36) + 18;
-  for dy := -4 to 4 do
-    for dx := -4 to 4 do
-      if (dx*dx + dy*dy) <= 16 then  // Draw a circle
-        PutPixel(x + dx, y + dy, COLOR_GREEN);
+  // Draw coordinates
+  // Note: You'll need to implement a text rendering function for coordinates
 end;
+
+//************ Draw Status Area ************
 
 procedure DrawStatusArea;
 var
@@ -385,6 +523,8 @@ begin
   // TODO: Add player stats and logo
 end;
 
+//************ Draw Message Area ************
+
 procedure DrawMessageArea;
 var
   x, y, dy: Integer;
@@ -407,6 +547,8 @@ begin
   //end;
 end;
 
+//************ Render Frame ************
+
 procedure RenderFrame;
 begin
   // Clear screen to black
@@ -421,19 +563,90 @@ begin
   
   // Update the display
   Present;
-  Inc(FrameCount);
 end;
+
+//************ Handle Input ************
 
 procedure HandleInput;
 begin
   while SDL_PollEvent(@Event) <> 0 do
   begin
-    if Event.type_ = SDL_QUITEV then
-      Running := False
-    else if (Event.type_ = SDL_KEYDOWN) and (Event.key.keysym.sym = 27) then  // 27 is ESC key
-      Running := False;
+    case Event.type_ of
+      SDL_QUITEV: Running := False;
+      SDL_KEYDOWN:
+        case Event.key.keysym.sym of
+          SDLK_ESCAPE: Running := False;
+          SDLK_LEFT: MovePlayer(-1, 0);
+          SDLK_RIGHT: MovePlayer(1, 0);
+          SDLK_UP: MovePlayer(0, -1);
+          SDLK_DOWN: MovePlayer(0, 1);
+        end;
+    end;
   end;
 end;
+
+//************ Run Game ************
+
+procedure RunGame;
+begin
+  // Initialize SDL and framebuffer with 1:1 pixel scaling
+  if not GfxInit(SCREEN_WIDTH, SCREEN_HEIGHT, 1) then
+  begin
+    WriteLn('Failed to initialize graphics');
+    Halt(1);
+  end;
+  
+  try
+    // Initialize game state
+    InitializeWorld;
+    writeln('World Init done -- rungame');
+    Running := True;
+    FrameCount := 0;
+    LastTime := SDL_GetTicks();
+    
+    // Load world map
+    WriteLn('Loading world map...');
+    LoadWorldMap('..\data\world.map');
+    WriteLn('World map loaded. Dimensions: ', WORLD_WIDTH, 'x', WORLD_HEIGHT);
+    
+    // Print sample tile information
+    WriteLn('Sample tile information:');
+    WriteLn('  TILE_COLORS has ', High(TILE_COLORS) + 1, ' entries (0-', High(TILE_COLORS), ')');
+    
+    // Print tile ID at player position
+  WriteLn('Player tile ID: ', IntToHex(WorldMap[PlayerY, PlayerX], 2), 
+    ' at [', PlayerY, ',', PlayerX, ']');
+  
+  // Print a few sample tile IDs
+  WriteLn('Sample tile IDs:');
+  WriteLn('  [0,0]: ', IntToHex(WorldMap[0,0], 2));
+  WriteLn('  [', PlayerY, ',', PlayerX-1, ']: ', IntToHex(WorldMap[PlayerY, PlayerX-1], 2));
+  WriteLn('  [', PlayerY, ',', PlayerX+1, ']: ', IntToHex(WorldMap[PlayerY, PlayerX+1], 2));
+  WriteLn('  [', WORLD_HEIGHT-1, ',', WORLD_WIDTH-1, ']: ', 
+    IntToHex(WorldMap[WORLD_HEIGHT-1, WORLD_WIDTH-1], 2));
+    
+    // Check for out of range tile IDs
+    if (WorldMap[PlayerY, PlayerX] > High(TILE_COLORS)) then
+      WriteLn('WARNING: Tile ID ', WorldMap[PlayerY, PlayerX], ' at player position is out of range for TILE_COLORS (max=', High(TILE_COLORS), ')');
+      
+    // Run the game
+    while Running do
+    begin
+      HandleInput;
+      RenderFrame;
+      SDL_Delay(16);  // Cap at ~60 FPS
+      Inc(FrameCount);
+    end;
+    
+  finally
+    GfxQuit;
+  end;
+  
+  WriteLn('Average FPS: ', FrameCount / ((SDL_GetTicks() - LastTime) / 1000):0:2);
+end;
+
+
+//************ Main Begin ************
 
 begin
   // Initialize SDL and framebuffer with 1:1 pixel scaling
@@ -451,15 +664,17 @@ begin
     LastTime := SDL_GetTicks();
     
     // Main game loop
-    while Running do
-    begin
-      HandleInput;
-      RenderFrame;
+    //while Running do
+    //begin
+      //HandleInput;
+      //RenderFrame;
       
       // Simple frame rate limiting
-      SDL_Delay(16);  // ~60 FPS
-    end;
-    
+      //SDL_Delay(16);  // ~60 FPS
+    //end;
+
+   RunGame;
+
   finally
     GfxQuit;
   end;

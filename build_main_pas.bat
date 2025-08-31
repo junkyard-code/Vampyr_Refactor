@@ -22,8 +22,8 @@ echo === Building Vampyr World Viewer ===
   -Fu"resources\SDL2-for-Pascal-2.3-stable\units" ^
   -FE"%BIN_DIR%" ^
   -FU"%BUILD_DIR%" ^
-  -o"%BIN_DIR%\vampyr_fb_viewer.exe" ^
-  %SOURCE_DIR%\fb_viewer.pas
+  -o"%BIN_DIR%\vampyr_world_viewer.exe" ^
+  %SOURCE_DIR%\main.pas
 
 if errorlevel 1 (
   echo Build FAILED
