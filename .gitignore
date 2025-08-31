@@ -1,5 +1,8 @@
 # Compiled files
 *.exe
+*.zip
+bin/
+bin.zip
 *.o
 *.ppu
 *.dcu
