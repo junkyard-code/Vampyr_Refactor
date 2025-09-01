@@ -6,40 +6,40 @@ uses
   SDL2, SysUtils, Math, ugfx_fb, uGameTypes, data_loaders, Classes;
 
 const
-  // Original game resolution (EGA 16-color)
-  ORIGINAL_WIDTH = 640;
-  ORIGINAL_HEIGHT = 200;
-  
   // World map dimensions (100 columns x 110 rows)
   WORLD_WIDTH = 100;
   WORLD_HEIGHT = 110;
   
-  // Scaled resolution (2x original)
+  // Scaled Resolution (X = 2x, Y = 3x original)
+  ORIGINAL_WIDTH = 640;
+  ORIGINAL_HEIGHT = 200;
   SCREEN_WIDTH = 1280;   // 640 * 2
-  SCREEN_HEIGHT = 400;   // 200 * 2
+  SCREEN_HEIGHT = 600;   // 200 * 3
   
   // UI Constants - Scaled 2x from original
-  BORDER_SIZE = 10;      // 5 pixels * 2 (original was 5 pixels)
+  BORDER_WIDTH = 10;      // 5 pixels * 2 (original was 5 pixels)
   
-  // Main UI Areas (scaled 2x from original)
-  MAP_VIEW_X = 6;       // 6 * 2
-  MAP_VIEW_Y = 6;        // 3 * 2
-  MAP_VIEW_WIDTH = 504;  // 252 * 2
-  MAP_VIEW_HEIGHT = 252; // 126 * 2
+  // Border Divider Location and Width
+  DIVIDER_X = 514;       // 258 * 2
+  DIVIDER_Y = 388;       // 131 * 3
   
-  // Divider between map and status (x position)
-  DIVIDER_X = 513;       // 258 * 2
-  DIVIDER_WIDTH = 12;    // 6 * 2
+  // 7x7 Tile Area Region (scaled 2x from original)
+  MAP_AREA_X = 10;       // 6 * 2
+  MAP_AREA_Y = 10;        // 3 * 2
+  MAP_AREA_WIDTH = (2* 36) * 7;  // 252 * 2
+  MAP_AREA_HEIGHT = (3* 18) * 7;  // 126 * 3
   
-  // Status area
-  STATUS_AREA_X = 528;   // 264 * 2
-  STATUS_AREA_Y = 6;     // 3 * 2
-  STATUS_AREA_WIDTH = 742; // 371 * 2
-  STATUS_AREA_HEIGHT = 252; // 126 * 2
+  // Status Area Region
+  STATUS_AREA_X = 524;   // 264 * 2
+  STATUS_AREA_Y = 10;     // 3 * 2
+  STATUS_AREA_WIDTH = 743; // 371 * 2
+  STATUS_AREA_HEIGHT = 378; // 126 * 3
   
-  // Message area
-  MESSAGE_AREA_Y = 261;  // 132 * 2
-  MESSAGE_AREA_HEIGHT = 132; // 66 * 2
+  // Message Area Region
+  MESSAGE_AREA_X = 10;   // 6 * 2
+  MESSAGE_AREA_Y = 399;  // 133 * 3
+  MESSAGE_AREA_WIDTH = 1260; // 635 * 2
+  MESSAGE_AREA_HEIGHT = 190; // 59 * 3
   
   // Colors in ARGB format (8 bits per component)
   // Note: SDL uses ABGR format
@@ -51,6 +51,7 @@ const
   MapViewInitialized: Boolean = False;
   LastPlayerX: Integer = -1;
   LastPlayerY: Integer = -1;
+
   COLOR_RED_DARK = $FFA00000;  // Darker red for border outline
   COLOR_BLUE_DARK = $FF400000; // Dark blue for status area
   COLOR_GRAY_DARK = $FF202020; // Dark gray for message area
@@ -131,7 +132,51 @@ var
 
 
 
-//************ Load Vampyr Logo ************
+//*********************************************** EGA to RGB ***********************************************
+
+function EGAtoRGB(ColorIndex: Byte): LongWord;
+begin
+  if ColorIndex > High(EGAPalette) then
+    ColorIndex := 0; // Default to black if color index is out of range
+    
+  with EGAPalette[ColorIndex] do
+    Result := $FF000000 or (R shl 16) or (G shl 8) or B;
+end;
+
+//*********************************************** Draw Text ***********************************************
+
+procedure DrawText(x, y: Integer; const Text: String; Color: LongWord);
+var
+  i: Integer;
+  ch: Char;
+  charX, charY: Integer;
+  charWidth, charHeight: Integer;
+  charData: Byte;
+  bit: Byte;
+  px, py: Integer;
+begin
+  // Simple 8x8 font rendering
+  charWidth := 8;
+  charHeight := 8;
+  
+  for i := 1 to Length(Text) do
+  begin
+    ch := UpCase(Text[i]);
+    // Simple character rendering - just draw a rectangle for each character
+    // In a real implementation, you'd want to use a proper font rendering function
+    for charY := 0 to charHeight - 1 do
+    begin
+      for charX := 0 to charWidth - 1 do
+      begin
+        // Simple pattern to make characters visible
+        if ((charX = 0) or (charX = charWidth - 1) or (charY = 0) or (charY = charHeight - 1)) then
+          PutPixel(x + (i-1) * charWidth + charX, y + charY, Color);
+      end;
+    end;
+  end;
+end;
+
+//*********************************************** Load Vampyr Logo ***********************************************
 
 function LoadVampyrLogo: Boolean;
 var
@@ -178,58 +223,15 @@ WriteLn('Loading Vampyr logo...LoadVampyrLogo');
   end;
 end;
 
-
-//************ EGA to RGB ************
-
-function EGAtoRGB(ColorIndex: Byte): LongWord;
-begin
-  if ColorIndex > High(EGAPalette) then
-    ColorIndex := 0; // Default to black if color index is out of range
-    
-  with EGAPalette[ColorIndex] do
-    Result := $FF000000 or (R shl 16) or (G shl 8) or B;
-end;
-
-//************ Draw Text ************
-
-procedure DrawText(x, y: Integer; const Text: String; Color: LongWord);
-var
-  i: Integer;
-  ch: Char;
-  charX, charY: Integer;
-  charWidth, charHeight: Integer;
-  charData: Byte;
-  bit: Byte;
-  px, py: Integer;
-begin
-  // Simple 8x8 font rendering
-  charWidth := 8;
-  charHeight := 8;
-  
-  for i := 1 to Length(Text) do
-  begin
-    ch := UpCase(Text[i]);
-    // Simple character rendering - just draw a rectangle for each character
-    // In a real implementation, you'd want to use a proper font rendering function
-    for charY := 0 to charHeight - 1 do
-    begin
-      for charX := 0 to charWidth - 1 do
-      begin
-        // Simple pattern to make characters visible
-        if ((charX = 0) or (charX = charWidth - 1) or (charY = 0) or (charY = charHeight - 1)) then
-          PutPixel(x + (i-1) * charWidth + charX, y + charY, Color);
-      end;
-    end;
-  end;
-end;
-
-//************ Draw Vampyr Logo ************
+//*********************************************** Draw Vampyr Logo ************************************
 
 procedure DrawVampyrLogo;
 const
   LOGO_SCALED_WIDTH = 580;  // 145 * 4
-  LOGO_SCALED_HEIGHT = 50;  // 25 * 2
+  LOGO_SCALED_HEIGHT = 75;  // 25 * 3 (changed from 50)
   LOGO_TOP_MARGIN = 10;     // Pixels from top of status area
+  HORIZONTAL_SCALE = 4;     // 4x horizontal scaling
+  VERTICAL_SCALE = 3;       // 3x vertical scaling (changed from 2)
   
 var
   x, y, dx, dy: Integer;
@@ -237,7 +239,6 @@ var
   colorIndex: Byte;
   color: LongWord;
 begin
-
   if not LogoLoaded then
   begin
     // Try to load the logo if not loaded
@@ -247,14 +248,13 @@ begin
   
   // Calculate position to center the logo in the status area
   // Original: 145x25 pixels
-  // Scaled: 580x50 pixels (4x horizontal, 2x vertical)
+  // Scaled: 580x75 pixels (4x horizontal, 3x vertical)
   
   // Center horizontally in status area, with margin from top
   logoX := STATUS_AREA_X + (STATUS_AREA_WIDTH - LOGO_SCALED_WIDTH) div 2;
   logoY := STATUS_AREA_Y + LOGO_TOP_MARGIN;
-
   
-  // Draw the logo with 4x horizontal and 2x vertical scaling
+  // Draw the logo with 4x horizontal and 3x vertical scaling
   for y := 1 to 25 do
   begin
     for x := 1 to 145 do
@@ -263,17 +263,19 @@ begin
       if colorIndex > 0 then
       begin
         color := EGAtoRGB(colorIndex);
-        // Draw 4x2 block for each pixel (4x horizontal, 2x vertical)
-        for dx := 0 to 3 do  // 4x horizontal
-          for dy := 0 to 1 do  // 2x vertical
-            PutPixel(logoX + (x-1)*4 + dx, logoY + (y-1)*2 + dy, color);
+        // Draw 4x3 block for each pixel (4x horizontal, 3x vertical)
+        for dx := 0 to HORIZONTAL_SCALE - 1 do
+          for dy := 0 to VERTICAL_SCALE - 1 do
+            PutPixel(logoX + (x-1)*HORIZONTAL_SCALE + dx, 
+                     logoY + (y-1)*VERTICAL_SCALE + dy, 
+                     color);
       end;
     end;
   end;
-  
 end;
+  
 
-//************ Initialize World ************
+//**************************************** Initialize World ************************************
 
 procedure InitializeWorld;
 begin
@@ -289,13 +291,12 @@ begin
   World.Player.YLoc := 8;
 end;
 
-//************ Draw Border ************
+//**************************************** Draw Border ****************************************
 
 procedure DrawBorder;
 var
-  x, y: Integer;
-  BORDER_WIDTH: Integer = 5;  // 5-pixel wide borders
-  
+  x, y, i, dx, dy: Integer;
+
   // Helper procedure to draw a horizontal line
   procedure DrawHorizontalLine(x1, x2, y: Integer; color: LongWord);
   var
@@ -315,63 +316,102 @@ var
   end;
   
   // Procedure to draw a border rectangle with 3D effect
-  procedure DrawBorderRect(x1, y1, x2, y2: Integer; color: LongWord);
+  procedure DrawBorderRect();
   var
-    i: Integer;
+    i, y: Integer;
   begin
-    // Draw outer border (darker red, 3 pixels)
-    for i := 0 to 2 do  // First 3 pixels (0,1,2)
-    begin
+ 
       // Top and bottom borders
-      DrawHorizontalLine(x1, x2, y1 + i, COLOR_RED_DARK);      // Top border (outer)
-      DrawHorizontalLine(x1, x2, y2 - i, COLOR_RED_DARK);      // Bottom border (outer)
-      
-      // Left and right borders
-      DrawVerticalLine(x1 + i, y1, y2, COLOR_RED_DARK);        // Left border (outer)
-      DrawVerticalLine(x2 - i, y1, y2, COLOR_RED_DARK);        // Right border (outer)
-    end;
-    
-    // Draw inner border (brighter red, middle 4 pixels)
-    for i := 3 to BORDER_WIDTH - 1 do  // Next 2 pixels (3,4)
-    begin
-      // Top and bottom borders
-      DrawHorizontalLine(x1, x2, y1 + i, COLOR_RED);          // Top border (inner)
-      DrawHorizontalLine(x1, x2, y2 - i, COLOR_RED);          // Bottom border (inner)
-      
-      // Left and right borders
-      DrawVerticalLine(x1 + i, y1, y2, COLOR_RED);            // Left border (inner)
-      DrawVerticalLine(x2 - i, y1, y2, COLOR_RED);            // Right border (inner)
-    end;
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, 0, COLOR_RED_DARK);      
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, 1, COLOR_RED_DARK);     
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, 2, COLOR_RED_DARK);  
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, 3, COLOR_RED_DARK);  
+      DrawHorizontalLine(4, SCREEN_WIDTH-5, 4, COLOR_RED);  
+      DrawHorizontalLine(4, SCREEN_WIDTH-5, 5, COLOR_RED);  
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, 6, COLOR_RED_DARK);      
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, 7, COLOR_RED_DARK);     
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, 8, COLOR_RED_DARK);  
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, 9, COLOR_RED_DARK);  
+
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, SCREEN_HEIGHT-10, COLOR_RED_DARK);  
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, SCREEN_HEIGHT-9, COLOR_RED_DARK);      
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, SCREEN_HEIGHT-8, COLOR_RED_DARK);     
+      DrawHorizontalLine(6, SCREEN_WIDTH-7, SCREEN_HEIGHT-7, COLOR_RED_DARK); 
+      DrawHorizontalLine(5, SCREEN_WIDTH-5, SCREEN_HEIGHT-6, COLOR_RED);  
+      DrawHorizontalLine(5, SCREEN_WIDTH-5, SCREEN_HEIGHT-5, COLOR_RED);   
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, SCREEN_HEIGHT-4, COLOR_RED_DARK);  
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, SCREEN_HEIGHT-3, COLOR_RED_DARK);      
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, SCREEN_HEIGHT-2, COLOR_RED_DARK);     
+      DrawHorizontalLine(0, SCREEN_WIDTH-1, SCREEN_HEIGHT-1, COLOR_RED_DARK);  
+
+      // Left and Right Borders
+      DrawVerticalLine(0, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK);      
+      DrawVerticalLine(1, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK);     
+      DrawVerticalLine(2, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK);  
+      DrawVerticalLine(3, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK); 
+      DrawVerticalLine(4, 4, SCREEN_HEIGHT-5, COLOR_RED);  
+      DrawVerticalLine(5, 4, SCREEN_HEIGHT-5, COLOR_RED); 
+      DrawVerticalLine(6, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK);      
+      DrawVerticalLine(7, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK);     
+      DrawVerticalLine(8, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK);  
+      DrawVerticalLine(9, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK); 
+
+      DrawVerticalLine(SCREEN_WIDTH-10, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK);   
+      DrawVerticalLine(SCREEN_WIDTH-9, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK);      
+      DrawVerticalLine(SCREEN_WIDTH-8, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK);     
+      DrawVerticalLine(SCREEN_WIDTH-7, 6, SCREEN_HEIGHT-7, COLOR_RED_DARK);  
+      DrawVerticalLine(SCREEN_WIDTH-6, 4, SCREEN_HEIGHT-5, COLOR_RED);  
+      DrawVerticalLine(SCREEN_WIDTH-5, 4, SCREEN_HEIGHT-5, COLOR_RED); 
+      DrawVerticalLine(SCREEN_WIDTH-4, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK);   
+      DrawVerticalLine(SCREEN_WIDTH-3, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK);      
+      DrawVerticalLine(SCREEN_WIDTH-2, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK);     
+      DrawVerticalLine(SCREEN_WIDTH-1, 0, SCREEN_HEIGHT-1, COLOR_RED_DARK);  
   end;
 
 begin
+
   // Draw outer window border
-  DrawBorderRect(0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1, COLOR_RED);
-  
-  // Draw vertical divider between map and status areas (5 pixels wide)
-  for x := DIVIDER_X - (BORDER_WIDTH div 2) to DIVIDER_X + (BORDER_WIDTH div 2) do
-  begin
-    // First 3 pixels (top to bottom) use darker red
-    if x <= DIVIDER_X - 1 then
-      DrawVerticalLine(x, BORDER_WIDTH, MESSAGE_AREA_Y+2 - BORDER_WIDTH, COLOR_RED_DARK)
-    // Next 2 pixels use brighter red
-    else
-      DrawVerticalLine(x, BORDER_WIDTH, MESSAGE_AREA_Y+2 - BORDER_WIDTH, COLOR_RED);
-  end;
+  DrawBorderRect();
   
   // Draw horizontal divider above message area (5 pixels high)
-  for y := MESSAGE_AREA_Y - (BORDER_WIDTH div 2) to MESSAGE_AREA_Y + (BORDER_WIDTH div 2) do
-  begin
-    // First 3 pixels (left to right) use darker red
-    if y <= MESSAGE_AREA_Y - 1 then
-      DrawHorizontalLine(BORDER_WIDTH, SCREEN_WIDTH - BORDER_WIDTH - 1, y, COLOR_RED_DARK)
-    // Next 2 pixels use brighter red
-    else
-      DrawHorizontalLine(BORDER_WIDTH, SCREEN_WIDTH - BORDER_WIDTH - 1, y, COLOR_RED);
-  end;
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y, COLOR_RED_DARK);      
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y+1, COLOR_RED_DARK);     
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y+2, COLOR_RED_DARK);  
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y+3, COLOR_RED_DARK);  
+  DrawHorizontalLine(4, SCREEN_WIDTH-5, DIVIDER_Y+4, COLOR_RED);  
+  DrawHorizontalLine(4, SCREEN_WIDTH-5, DIVIDER_Y+5, COLOR_RED); 
+  DrawHorizontalLine(4, SCREEN_WIDTH-5, DIVIDER_Y+6, COLOR_RED);  
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y+7, COLOR_RED_DARK);      
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y+8, COLOR_RED_DARK);     
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y+9, COLOR_RED_DARK);  
+  DrawHorizontalLine(6, SCREEN_WIDTH-7, DIVIDER_Y+10, COLOR_RED_DARK);  
+
+  // Draw vertical divider between map and status areas (5 pixels wide)
+  DrawVerticalLine(DIVIDER_X, 6, DIVIDER_Y, COLOR_RED_DARK);   
+  DrawVerticalLine(DIVIDER_X+1, 6, DIVIDER_Y, COLOR_RED_DARK);      
+  DrawVerticalLine(DIVIDER_X+2, 6, DIVIDER_Y, COLOR_RED_DARK);     
+  DrawVerticalLine(DIVIDER_X+3, 6, DIVIDER_Y, COLOR_RED_DARK);  
+  DrawVerticalLine(DIVIDER_X+4, 4, DIVIDER_Y+5, COLOR_RED);  
+  DrawVerticalLine(DIVIDER_X+5, 4, DIVIDER_Y+5, COLOR_RED); 
+  DrawVerticalLine(DIVIDER_X+6, 6, DIVIDER_Y, COLOR_RED_DARK);   
+  DrawVerticalLine(DIVIDER_X+7, 6, DIVIDER_Y, COLOR_RED_DARK);      
+  DrawVerticalLine(DIVIDER_X+8, 6, DIVIDER_Y, COLOR_RED_DARK);     
+  DrawVerticalLine(DIVIDER_X+9, 6, DIVIDER_Y, COLOR_RED_DARK);  
+
+  // Fill message area with gray background first
+  for y := MESSAGE_AREA_Y to MESSAGE_AREA_Y + MESSAGE_AREA_HEIGHT do
+    for x := MESSAGE_AREA_X to MESSAGE_AREA_X + MESSAGE_AREA_WIDTH do
+      PutPixel(x, y, $FF303030);  // Light gray background
+ 
+  // Fill status area with gray background first
+  for y := STATUS_AREA_Y to STATUS_AREA_Y + STATUS_AREA_HEIGHT do
+    for x := STATUS_AREA_X to STATUS_AREA_X + STATUS_AREA_WIDTH do
+      PutPixel(x, y, $FF000030);  // Light blue background
+
+
 end;
 
-//************ Load World Map ************
+//**************************************** Load World Map ***************************************
 
 procedure LoadWorldMap(const Filename: string);
 var
@@ -417,7 +457,7 @@ begin
   Result := (x >= 0) and (x < 110) and (y >= 0) and (y < 100);
 end;
 
-//************ Move Player ************
+//**************************************** Move Player ***************************************
 
 procedure MovePlayer(dx, dy: Integer);
 var
@@ -442,58 +482,22 @@ begin
   end;
 end;
 
-//************ Draw Map View ************
+//**************************************** Draw Map View **************************************
 
 {*
   Draws a 7x7 grid of tiles centered on the player's position.
-  Only redraws tiles that have changed from the previous frame.
-  Uses dirty region tracking to minimize screen updates.
+  Always redraws all tiles for simplicity.
 *}
 procedure DrawMapView;
 var
-  tx, ty, x, y, dx, dy, wx, wy: Integer;
+  tx, ty, x, y, dx, dy, wx, wy, px, py: Integer;
+  RedrawAll: Boolean = True;
   tileColor: LongWord;
   tileSizeX, tileSizeY: Integer;
-  // Store previous player position for dirty region calculation
-  PrevPlayerX, PrevPlayerY: Integer;
-  // Store previous map state for comparison
-  PrevMap: array[-3..3, -3..3] of Byte;
-  // Store previous colors for comparison
-  PrevColors: array[-3..3, -3..3] of LongWord;
-  // Track if we need to redraw the entire map view
-  RedrawAll, needsRedraw: Boolean;
-  // Player position variables
-  px, py: Integer;
-  bgColor: LongWord;
 begin
-  // Map view state tracking
-  
-  // Track if map needs to be completely redrawn
-  RedrawAll := False;
-  
-  // Initialize previous positions if not already set
-  if not MapViewInitialized then
-  begin
-    MapViewInitialized := True;
-    LastPlayerX := PlayerX;
-    LastPlayerY := PlayerY;
-  end;
-  
-  // Check if player moved or if we need to redraw everything
-  if not MapViewInitialized or (PlayerX <> LastPlayerX) or (PlayerY <> LastPlayerY) then
-  begin
-    RedrawAll := True;
-    
-    // Store current player position for next frame
-    PrevPlayerX := LastPlayerX;
-    PrevPlayerY := LastPlayerY;
-    LastPlayerX := PlayerX;
-    LastPlayerY := PlayerY;
-  end;
-  
   // Calculate tile size to fit 7x7 grid in the map view area
-  tileSizeX := MAP_VIEW_WIDTH div 7;
-  tileSizeY := MAP_VIEW_HEIGHT div 7;
+  tileSizeX := MAP_AREA_WIDTH div 7;
+  tileSizeY := MAP_AREA_HEIGHT div 7;
   
   // Draw 7x7 grid centered on player
   for ty := -3 to 3 do
@@ -505,14 +509,13 @@ begin
       wy := PlayerY + ty;
       
       // Calculate screen position
-      x := MAP_VIEW_X + (tx + 3) * tileSizeX;
-      y := MAP_VIEW_Y + (ty + 3) * tileSizeY;
+      x := MAP_AREA_X + (tx + 3) * tileSizeX;
+      y := MAP_AREA_Y + (ty + 3) * tileSizeY;
       
       // Get tile color (default to black for out of bounds)
       tileColor := COLOR_BLACK;
       if (wx >= 0) and (wx < 110) and (wy >= 0) and (wy < 100) then
       begin
-      //writeln('Tile: ', wx, ',', wy, ' = ', WorldMap[wy, wx]);
         // Use tile color from map, default to black if invalid
         if WorldMap[wy, wx] <= High(TILE_COLORS) then
           tileColor := TILE_COLORS[WorldMap[wy, wx]]
@@ -520,88 +523,34 @@ begin
           tileColor := $FF000000;  // Black for invalid tile IDs
       end;
       
-      // Check if we need to redraw this tile
-      needsRedraw := RedrawAll;
-      if not needsRedraw then
-      begin
-        // Check if this tile's content changed
-        if (wx >= 0) and (wx < 110) and (wy >= 0) and (wy < 100) then
-          needsRedraw := (WorldMap[wy, wx] <> PrevMap[ty, tx]) or 
-                        (tileColor <> PrevColors[ty, tx]);
-      end;
-      
-      if needsRedraw then
-      begin
-        // Draw tile background
-        for dy := 0 to tileSizeY - 1 do
-          for dx := 0 to tileSizeX - 1 do
-            PutPixel(x + dx, y + dy, tileColor);
-        
-        // Draw grid lines (white border)
+      // Draw tile background
+      for dy := 0 to tileSizeY - 1 do
         for dx := 0 to tileSizeX - 1 do
-        begin
-          PutPixel(x + dx, y, COLOR_WHITE);
-          PutPixel(x + dx, y + tileSizeY - 1, COLOR_WHITE);
-        end;
-        for dy := 0 to tileSizeY - 1 do
-        begin
-          PutPixel(x, y + dy, COLOR_WHITE);
-          PutPixel(x + tileSizeX - 1, y + dy, COLOR_WHITE);
-        end;
-        
-        // Update previous state
-        if (wx >= 0) and (wx < 110) and (wy >= 0) and (wy < 100) then
-          PrevMap[ty, tx] := WorldMap[wy, wx]
-        else
-          PrevMap[ty, tx] := 0;
-        PrevColors[ty, tx] := tileColor;
+          PutPixel(x + dx, y + dy, tileColor);
+      
+      // Draw grid lines (white border)
+      for dx := 0 to tileSizeX - 1 do
+      begin
+        PutPixel(x + dx, y, COLOR_WHITE);
+        PutPixel(x + dx, y + tileSizeY - 1, COLOR_WHITE);
+      end;
+      for dy := 0 to tileSizeY - 1 do
+      begin
+        PutPixel(x, y + dy, COLOR_WHITE);
+        PutPixel(x + tileSizeX - 1, y + dy, COLOR_WHITE);
       end;
       
-      // Always redraw player (if in this tile)
+      // Draw player in center tile
       if (tx = 0) and (ty = 0) then
       begin
-        // Clear previous player position if moved
-        if RedrawAll and (PrevPlayerX <> -1) and 
-           ((PrevPlayerX <> PlayerX) or (PrevPlayerY <> PlayerY)) then
-        begin
-          // Redraw the tile where player was
-          px := MAP_VIEW_X + (PlayerX - PrevPlayerX + 3) * tileSizeX;
-          py := MAP_VIEW_Y + (PlayerY - PrevPlayerY + 3) * tileSizeY;
-          bgColor := COLOR_BLACK;
-          if (PrevPlayerX >= 0) and (PrevPlayerX < 110) and 
-             (PrevPlayerY >= 0) and (PrevPlayerY < 100) then
-          begin
-            if WorldMap[PrevPlayerY, PrevPlayerX] <= High(TILE_COLORS) then
-              bgColor := TILE_COLORS[WorldMap[PrevPlayerY, PrevPlayerX]]
-            else
-              bgColor := $FF000000;
-          end;
-          
-          // Redraw the tile
-          for dy := 0 to tileSizeY - 1 do
-            for dx := 0 to tileSizeX - 1 do
-              PutPixel(px + dx, py + dy, bgColor);
-              
-          // Redraw grid lines
-          for dx := 0 to tileSizeX - 1 do
-          begin
-            PutPixel(px + dx, py, COLOR_WHITE);
-            PutPixel(px + dx, py + tileSizeY - 1, COLOR_WHITE);
-          end;
-          for dy := 0 to tileSizeY - 1 do
-          begin
-            PutPixel(px, py + dy, COLOR_WHITE);
-            PutPixel(px + tileSizeX - 1, py + dy, COLOR_WHITE);
-          end;
-        end;
+        // Draw player (red square in center of tile)
+        px := x + tileSizeX div 2 - 2;  // Center player in tile
+        py := y + tileSizeY div 2 - 2;  // Center player in tile
         
-        // Draw player
-        for dy := -4 to 4 do
-          for dx := -4 to 4 do
-            if (dx*dx + dy*dy) <= 16 then  // Draw a circle
-              PutPixel(x + (tileSizeX div 2) + dx, 
-                      y + (tileSizeY div 2) + dy, 
-                      COLOR_GREEN);
+        // Draw a red square for the player (5x5 pixels)
+        for dy := 0 to 4 do
+          for dx := 0 to 4 do
+            PutPixel(px + dx, py + dy, $FFFF0000);  // Red color
       end;
     end;
   end;
@@ -611,7 +560,7 @@ begin
     MarkMapViewDirty;
 end;
 
-//************ Draw Status Area ************
+//************************************ Draw Status Area ************************************
 
 var
   // Track if UI areas were drawn before
@@ -631,24 +580,17 @@ begin
   if needsRedraw then
   begin
     // Draw status area background (dark blue)
-    for y := STATUS_AREA_Y+76 to STATUS_AREA_Y + 248 do
-      for x := STATUS_AREA_X to SCREEN_WIDTH - BORDER_SIZE - 5 do
-        PutPixel(x, y, $FF400000);  // Dark blue
-        
-    // Draw status area border (red)
-    // Draw top and bottom borders
-    for x := STATUS_AREA_X - 1 to SCREEN_WIDTH - BORDER_SIZE - 4 do
-    begin
-      PutPixel(x, STATUS_AREA_Y + 75, COLOR_RED);
-      PutPixel(x, STATUS_AREA_Y + 249, COLOR_RED);
-    end;
-    
+    //for y := STATUS_AREA_Y to STATUS_AREA_Y + 248 do
+     // for x := STATUS_AREA_X to SCREEN_WIDTH - BORDER_WIDTH - 5 do
+      //  PutPixel(x, y, $FF004000);  // Dark blue
+  
+   
     // Draw left and right borders
-    for y := STATUS_AREA_Y + 75 to STATUS_AREA_Y + 249 do
-    begin
-      PutPixel(STATUS_AREA_X - 1, y, COLOR_RED);
-      PutPixel(SCREEN_WIDTH - BORDER_SIZE - 4, y, COLOR_RED);
-    end;
+    //for y := STATUS_AREA_Y + 75 to STATUS_AREA_Y + 249 do
+    //begin
+    //  PutPixel(STATUS_AREA_X - 1, y, COLOR_RED);
+    //  PutPixel(SCREEN_WIDTH - BORDER_WIDE - 4, y, COLOR_RED);
+    //end;
     
     // Mark the status area as dirty
     //MarkStatusAreaDirty;
@@ -659,7 +601,7 @@ begin
   end;
 end;
 
-//************ Draw Message Area ************
+//************************************ Draw Message Area ************************************
 
 procedure DrawMessageArea;
 var
@@ -667,28 +609,21 @@ var
   needsRedraw: Boolean;
 begin
   // Only redraw if this is the first draw or if explicitly marked dirty
-  needsRedraw := not StatusAreaDrawn;
-  StatusAreaDrawn := True;
+  needsRedraw := not MessageAreaDrawn;
+  MessageAreaDrawn := True;
   
   if needsRedraw then
   begin
-    // Draw message area background (dark gray)
-    // Start 5 pixels below the top of the message area to account for border
-    // and leave 5 pixels at the bottom for the border
-    for y := MESSAGE_AREA_Y + 7 to SCREEN_HEIGHT - BORDER_SIZE do
-      for x := BORDER_SIZE to SCREEN_WIDTH - BORDER_SIZE do
-        PutPixel(x, y, $FF202020);
-    
     // Mark the message area as dirty
     //MarkMessageAreaDirty;
     
     // TODO: Add message display logic here
     // For now, just draw some placeholder text
-    // DrawText('MESSAGES', BORDER_SIZE + 10, MESSAGE_AREA_Y + 15, COLOR_WHITE);
+    // DrawText('MESSAGES', BORDER_WIDTH + 10, MESSAGE_AREA_Y + 15, COLOR_WHITE);
   end;
 end;
 
-//************ Render Frame ************
+//************************************ Render Frame ************************************
 
 procedure RenderFrame;
 begin
@@ -792,7 +727,7 @@ begin
   end;
 end;
 
-//************ Handle Input ************
+//************************************ Handle Input ************************************
 
 procedure HandleInput;
 begin
@@ -813,7 +748,7 @@ begin
   end;
 end;
 
-//************ Run Game ************
+//************************************ Run Game ************************************
 
 procedure RunGame;
 begin
@@ -879,7 +814,7 @@ begin
   WriteLn('Average FPS: ', FrameCount / ((SDL_GetTicks() - LastTime) / 1000):0:2);
 end;
 
-//************ Main Begin ************
+//************************************ Main Begin ************************************
 
 begin
   // Run the game with all initialization handled in RunGame

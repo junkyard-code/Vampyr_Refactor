@@ -41,6 +41,27 @@ procedure MarkMessageAreaDirty; inline;
 procedure MarkAllRegionsDirty;
 procedure MarkAllRegionsClean;
 
+
+const
+  // 7x7 Tile Area Region (scaled 2x from original)
+  MAP_AREA_X = 10;       // 6 * 2
+  MAP_AREA_Y = 10;        // 3 * 2
+  MAP_AREA_WIDTH = (2* 36) * 7;  // 252 * 2
+  MAP_AREA_HEIGHT = (3* 18) * 7;  // 126 * 3
+  
+  // Status Area Region
+  STATUS_AREA_X = 524;   // 264 * 2
+  STATUS_AREA_Y = 10;     // 3 * 2
+  STATUS_AREA_WIDTH = 743; // 371 * 2
+  STATUS_AREA_HEIGHT = 378; // 126 * 3
+  
+  // Message Area Region
+  MESSAGE_AREA_X = 10;   // 6 * 2
+  MESSAGE_AREA_Y = 399;  // 133 * 3
+  MESSAGE_AREA_WIDTH = 1260; // 635 * 2
+  MESSAGE_AREA_HEIGHT = 190; // 59 * 3
+
+
 var
   FB: array of LongWord;
   ScreenW, ScreenH: Integer;
@@ -91,7 +112,7 @@ var
 
 
 
-//************ GfxInit ************
+//***************************************** GfxInit *****************************************
 
 function GfxInit(W, H, Scale: Integer): Boolean;
 var
@@ -144,24 +165,24 @@ begin
   with DirtyRegions[riMapView] do
   begin
     // Map view area (7x7 grid within the frame)
-    X := 6; Y := 6; W := 504; H := 252;
+    X := 6; Y := 6; W := 504; H := 378;
   end;
   with DirtyRegions[riStatusArea] do
   begin
     // Player status area (red boxed area below the logo in status region)
-    X := 538; Y := 86; W := 722; H := 172;  // Adjust these coordinates as needed
+    X := 538; Y := 86; W := 722; H := 258;  // Adjust these coordinates as needed
   end;
   with DirtyRegions[riMessageArea] do
   begin
     // Message area (gray box area)
-    X := 20; Y := 271; W := 1240; H := 112;  // Slightly smaller than the full area to stay within the frame
+    X := 20; Y := 271; W := 1240; H := 168;  // Slightly smaller than the full area to stay within the frame
   end;
   
   Result := True;
 end;
 
 
-//************ GfxQuit ************
+//***************************************** GfxQuit *****************************************
 
 
 procedure GfxQuit;
@@ -204,7 +225,7 @@ end;
 
 
 
-//************ Clear Framebuffer ************
+//***************************************** Clear Framebuffer *****************************************
 
 {
   Fills the entire framebuffer with the specified color and marks the entire screen as dirty.
@@ -229,7 +250,7 @@ end;
 
 
 
-//************ Put Pixel ************
+//***************************************** Put Pixel *****************************************
 
 {
   Draws a single pixel at the specified coordinates and marks the region as dirty.
@@ -249,18 +270,22 @@ begin
     FB[y * ScreenW + x] := c;
     
     // Determine which region this pixel is in and mark it dirty
-    if (x >= 6) and (x < 510) and (y >= 6) and (y < 258) then
-      MarkRegionDirty(riMapView, x, y, 1, 1)
-    else if (x >= 528) and (x < 1270) and (y >= 6) and (y < 258) then
-      MarkRegionDirty(riStatusArea, x, y, 1, 1)
-    else if (x >= 10) and (x < 1270) and (y >= 261) and (y < 393) then
+    if (y >= 6) and (y < 384) then
+    begin
+      if (x >= 6) and (x < 510) then
+        MarkRegionDirty(riMapView, x, y, 1, 1)
+      else if (x >= 528) and (x < ScreenW) then
+        MarkRegionDirty(riStatusArea, x, y, 1, 1);
+    end
+    // Message area - include the entire width including borders
+    else if (y >= 350) and (y < 518) then
       MarkRegionDirty(riMessageArea, x, y, 1, 1);
   end;
 end;
 
 
 
-//************ Mark All Regions Dirty ************
+//********************************** Mark All Regions Dirty **********************************
 
 {
   Marks all regions as dirty.
@@ -282,7 +307,7 @@ end;
 
 
 
-//************ Mark a specific region as dirty ************
+//********************************** Mark a specific region as dirty **********************************
 
 procedure MarkRegionDirty(Region: TRegionID; X, Y, W, H: Integer);
 var
@@ -298,7 +323,27 @@ var
     if a > b then Result := a else Result := b;
   end;
   
+  function ClipValue(Value, MinVal, MaxVal: Integer): Integer;
+  begin
+    Result := Value;
+    if Result < MinVal then Result := MinVal;
+    if Result > MaxVal then Result := MaxVal;
+  end;
+  
 begin
+  // For message area, ensure we cover the full width to prevent artifacts
+  if Region = riMessageArea then
+  begin
+    X := 0;
+    W := ScreenW;
+  end;
+  
+  // Clip coordinates to screen bounds
+  X := ClipValue(X, 0, ScreenW - 1);
+  Y := ClipValue(Y, 0, ScreenH - 1);
+  W := ClipValue(W, 1, ScreenW - X);
+  H := ClipValue(H, 1, ScreenH - Y);
+  
   with DirtyRegions[Region] do
   begin
     if not IsDirty then
@@ -329,7 +374,7 @@ end;
 
 
 
-//************ Present ************
+//********************************** Present **********************************
 
 
 {
@@ -445,7 +490,7 @@ end;
 
 
 
-//************ Mark Map View Dirty ************
+//********************************** Mark Map View Dirty **********************************
 
 // Public region marking procedures
 procedure MarkMapViewDirty; inline;
@@ -456,7 +501,7 @@ end;
 
 
 
-//************ Mark Status Area Dirty ************
+//********************************** Mark Status Area Dirty **********************************
 
 procedure MarkStatusAreaDirty; inline;
 begin
@@ -465,7 +510,7 @@ begin
 end;
 
 
-//************ Mark Message Area Dirty ************
+//********************************** Mark Message Area Dirty **********************************
 
 procedure MarkMessageAreaDirty; inline;
 begin
@@ -474,7 +519,7 @@ begin
 end;
 
 
-//************ Is Region Dirty ************
+//********************************** Is Region Dirty **********************************
 
 {
   Marks all regions as clean.
@@ -488,7 +533,7 @@ end;
 
 
 
-//************ Mark All Regions Clean ************
+//********************************** Mark All Regions Clean **********************************
 
 procedure MarkAllRegionsClean;
 var
@@ -503,7 +548,7 @@ end;
 
 
 
-//************ Get Region Rect ************
+//********************************** Get Region Rect **********************************
 
 { Returns the rectangle for a given UI region }
 procedure GetRegionRect(Region: TRegionID; out Rect: TSDL_Rect);
@@ -512,36 +557,36 @@ begin
     riMapView:
       begin
         // Map view takes up most of the screen
-        Rect.x := 0;
-        Rect.y := 0;
-        Rect.w := ScreenW;
-        Rect.h := ScreenH - 100; // Leave space for status/message areas
+        Rect.x := MAP_AREA_X - 10;
+        Rect.y := MAP_AREA_Y - 10;
+        Rect.w := MAP_AREA_WIDTH + 15;
+        Rect.h := MAP_AREA_HEIGHT + 15; // Leave space for status/message areas
       end;
       
     riStatusArea:
       begin
         // Status area at the bottom of the screen
-        Rect.x := 0;
-        Rect.y := ScreenH - 100;
-        Rect.w := ScreenW div 2;
-        Rect.h := 50;
+        Rect.x := STATUS_AREA_X - 5;  // 524 + 2
+        Rect.y := STATUS_AREA_Y - 10;   // 70 + 2
+        Rect.w := STATUS_AREA_WIDTH + 19;  // 742 - 1
+        Rect.h := STATUS_AREA_HEIGHT + 15;  // 265 - 5
       end;
       
     riMessageArea:
       begin
         // Message area below status area
-        Rect.x := 0;
-        Rect.y := ScreenH - 50;
-        Rect.w := ScreenW;
-        Rect.h := 50;
+        Rect.x := MESSAGE_AREA_X - 10;
+        Rect.y := MESSAGE_AREA_Y - 6;
+        Rect.w := MESSAGE_AREA_WIDTH + 19;
+        Rect.h := MESSAGE_AREA_HEIGHT + 19;
       end;
   end;
   
   // Ensure the rectangle is within screen bounds
-  if Rect.x < 0 then Rect.x := 0;
-  if Rect.y < 0 then Rect.y := 0;
-  if Rect.x + Rect.w > ScreenW then Rect.w := ScreenW - Rect.x;
-  if Rect.y + Rect.h > ScreenH then Rect.h := ScreenH - Rect.y;
+  //if Rect.x < 0 then Rect.x := 0;
+  //if Rect.y < 0 then Rect.y := 0;
+  //if Rect.x + Rect.w > ScreenW then Rect.w := ScreenW - Rect.x;
+  //if Rect.y + Rect.h > ScreenH then Rect.h := ScreenH - Rect.y;
 end;
 
 end.
