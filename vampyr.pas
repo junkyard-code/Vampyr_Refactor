@@ -1,8 +1,6 @@
 program vampyr;
 {$mode objfpc}{$H+}
 
-
-
 uses
   CRT, SDL2, SysUtils, Math, Classes, uGfx_fb, uAudioSDL, data_loaders, uConTiles, 
   StatusPanel, uMonster, uItems, uShops, uDisplay, fb_viewer;
