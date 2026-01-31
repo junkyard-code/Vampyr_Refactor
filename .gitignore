@@ -1,0 +1,10 @@
+# Ignore everything by default
+*
+
+# Allow only these
+!README.md
+!.gitignore
+
+# Allow release folder and everything inside it
+!release/
+!release/**

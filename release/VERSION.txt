@@ -1,0 +1,25 @@
+Vampyr – The Talisman of Invocation
+Refactored Classic & Enhanced Editions
+
+Version: 1.0.0
+Build Date: 2026-01-30
+
+Original Game:
+Version 2.0 (1989–1990)
+
+Author:
+Brian Weston
+
+Copyright:
+© 1989–1990 Brian Weston and Victor Shao
+© 2026 Brian Weston
+All rights reserved.
+
+Executables:
+- vampyr_classic.exe
+- vampyr_enhanced.exe
+
+Notes:
+This release is a faithful refactor of the original game by its original
+author, preserving gameplay and data while enabling execution on modern
+Windows systems.
